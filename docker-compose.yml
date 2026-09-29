@@ -1,0 +1,39 @@
+# Placeholder docker-compose dla hackathonu.
+# Na razie nie w pełni funkcjonalny - backend/frontend to puste katalogi.
+# Uzupełnić Dockerfile'e w backend/ i frontend/ oraz zmienne środowiskowe przed użyciem.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hackyeah
+      POSTGRES_PASSWORD: hackyeah
+      POSTGRES_DB: hackyeah
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://hackyeah:hackyeah@db:5432/hackyeah
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:

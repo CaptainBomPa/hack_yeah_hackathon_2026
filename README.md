@@ -6,6 +6,7 @@ Repozytorium projektu na HackYeah 2026.
 
 - [`backend/`](backend/) — kod backendu (placeholder)
 - [`frontend/`](frontend/) — kod frontendu (placeholder)
+- [`docker-compose.yml`](docker-compose.yml) — placeholder (baza PostgreSQL + backend + frontend, do uzupełnienia)
 - [`CLAUDE.md`](CLAUDE.md) — kontekst i instrukcje dla Claude
 - [`AGENTS.md`](AGENTS.md) — kontekst i instrukcje dla agentów OpenAI/GPT (Codex i inne narzędzia zgodne z konwencją AGENTS.md)
 - [`GEMINI.md`](GEMINI.md) — kontekst i instrukcje dla Gemini
