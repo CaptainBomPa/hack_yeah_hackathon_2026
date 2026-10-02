@@ -1,0 +1,392 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGlow" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#400b1a"/>
+      <stop offset="40%" stop-color="#1f0410"/>
+      <stop offset="70%" stop-color="#0d0107"/>
+      <stop offset="100%" stop-color="#020003"/>
+    </radialGradient>
+
+    <!-- Energy Sunburst Gradient -->
+    <radialGradient id="energyCore" cx="50%" cy="52%" r="50%">
+      <stop offset="0%" stop-color="#ff7b00" stop-opacity="0.85"/>
+      <stop offset="25%" stop-color="#ff2a00" stop-opacity="0.6"/>
+      <stop offset="50%" stop-color="#b8004f" stop-opacity="0.3"/>
+      <stop offset="85%" stop-color="#1a002b" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Cup Ceramic Gradient -->
+    <linearGradient id="cupBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2a272a"/>
+      <stop offset="20%" stop-color="#1a181b"/>
+      <stop offset="50%" stop-color="#121013"/>
+      <stop offset="80%" stop-color="#261c14"/>
+      <stop offset="100%" stop-color="#3d1e08"/>
+    </linearGradient>
+
+    <!-- Gold Trim Gradient -->
+    <linearGradient id="goldTrim" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffe259"/>
+      <stop offset="50%" stop-color="#ffa751"/>
+      <stop offset="100%" stop-color="#ff6b08"/>
+    </linearGradient>
+
+    <!-- Liquid Coffee Gradient -->
+    <radialGradient id="coffeeCrema" cx="45%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#fed7aa"/>
+      <stop offset="15%" stop-color="#f59e0b"/>
+      <stop offset="35%" stop-color="#b45309"/>
+      <stop offset="65%" stop-color="#78350f"/>
+      <stop offset="90%" stop-color="#451a03"/>
+      <stop offset="100%" stop-color="#270e02"/>
+    </radialGradient>
+
+    <!-- Lightning / Sparks Glow Filter -->
+    <filter id="superGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur1"/>
+      <feGaussianBlur stdDeviation="20" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="neonPulse" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Style for Animations -->
+    <style>
+      @keyframes spinRays {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      @keyframes steamFloat1 {
+        0% { transform: translateY(0) scaleX(1); opacity: 0.15; }
+        50% { transform: translateY(-40px) scaleX(1.2); opacity: 0.85; }
+        100% { transform: translateY(-90px) scaleX(0.9); opacity: 0; }
+      }
+      @keyframes steamFloat2 {
+        0% { transform: translateY(0) scaleX(0.9); opacity: 0.2; }
+        50% { transform: translateY(-50px) scaleX(1.3); opacity: 0.95; }
+        100% { transform: translateY(-105px) scaleX(0.8); opacity: 0; }
+      }
+      @keyframes zapFlicker {
+        0%, 100% { opacity: 0.95; transform: scale(1); }
+        25% { opacity: 0.4; transform: scale(0.98) rotate(0.5deg); }
+        50% { opacity: 1; transform: scale(1.03) rotate(-0.5deg); }
+        75% { opacity: 0.6; }
+      }
+      @keyframes energyPulse {
+        0%, 100% { transform: scale(1); filter: drop-shadow(0 0 25px #ff5500); }
+        50% { transform: scale(1.02); filter: drop-shadow(0 0 45px #ffbb00); }
+      }
+      @keyframes floatBean {
+        0%, 100% { transform: translateY(0px) rotate(0deg); }
+        50% { transform: translateY(-15px) rotate(10deg); }
+      }
+
+      .animated-rays {
+        transform-origin: 500px 520px;
+        animation: spinRays 40s linear infinite;
+      }
+      .steam-1 {
+        animation: steamFloat1 3.5s ease-in-out infinite;
+      }
+      .steam-2 {
+        animation: steamFloat2 2.8s ease-in-out infinite;
+      }
+      .zap-active {
+        animation: zapFlicker 0.2s steps(2, start) infinite;
+        transform-origin: 500px 500px;
+      }
+      .pulse-core {
+        animation: energyPulse 2s ease-in-out infinite;
+        transform-origin: 500px 550px;
+      }
+      .bean-float-1 { animation: floatBean 3s ease-in-out infinite; transform-origin: 200px 420px; }
+      .bean-float-2 { animation: floatBean 2.6s ease-in-out infinite reverse; transform-origin: 800px 400px; }
+      .bean-float-3 { animation: floatBean 3.4s ease-in-out infinite 1s; transform-origin: 180px 650px; }
+      .bean-float-4 { animation: floatBean 2.9s ease-in-out infinite 0.5s; transform-origin: 820px 640px; }
+    </style>
+  </defs>
+
+  <!-- Deep Dark Cosmic Background -->
+  <rect width="1000" height="1000" fill="url(#bgGlow)"/>
+
+  <!-- Rotating Overcharge Energy Rays -->
+  <g class="animated-rays" opacity="0.45">
+    <path d="M500,520 L420,-100 L580,-100 Z" fill="url(#goldTrim)"/>
+    <path d="M500,520 L980,-20 L1080,100 Z" fill="url(#goldTrim)"/>
+    <path d="M500,520 L1120,440 L1120,600 Z" fill="url(#goldTrim)"/>
+    <path d="M500,520 L1060,920 L960,1040 Z" fill="url(#goldTrim)"/>
+    <path d="M500,520 L580,1140 L420,1140 Z" fill="url(#goldTrim)"/>
+    <path d="M500,520 L40,1040 L-60,920 Z" fill="url(#goldTrim)"/>
+    <path d="M500,520 L-120,600 L-120,440 Z" fill="url(#goldTrim)"/>
+    <path d="M500,520 L-60,120 L40,-20 Z" fill="url(#goldTrim)"/>
+  </g>
+
+  <!-- Radial Core Explosion Aura -->
+  <circle cx="500" cy="520" r="480" fill="url(#energyCore)"/>
+  <circle cx="500" cy="520" r="280" fill="#ff4d00" opacity="0.35" filter="url(#superGlow)"/>
+
+  <!-- Speed / Energy Sparks Lines -->
+  <g stroke="#ffd000" stroke-width="2.5" stroke-linecap="round" opacity="0.75">
+    <line x1="500" y1="520" x2="160" y2="180" stroke-dasharray="15 30"/>
+    <line x1="500" y1="520" x2="840" y2="180" stroke-dasharray="25 40"/>
+    <line x1="500" y1="520" x2="890" y2="520" stroke-dasharray="10 25"/>
+    <line x1="500" y1="520" x2="110" y2="520" stroke-dasharray="12 28"/>
+    <line x1="500" y1="520" x2="190" y2="840" stroke-dasharray="20 35"/>
+    <line x1="500" y1="520" x2="810" y2="840" stroke-dasharray="18 30"/>
+  </g>
+
+  <!-- Giant Crackling Lightning Arcs (Behind Cup) -->
+  <g class="zap-active" filter="url(#superGlow)">
+    <path d="M500,280 L440,210 L470,200 L410,120 L490,135 L470,60" fill="none" stroke="#fffb00" stroke-width="6"/>
+    <path d="M520,300 L610,230 L580,215 L660,140 L590,130 L670,40" fill="none" stroke="#00f2ff" stroke-width="5"/>
+    <path d="M300,520 L210,480 L230,450 L140,430 L160,390 L80,380" fill="none" stroke="#ff0077" stroke-width="4.5"/>
+    <path d="M700,520 L790,470 L770,440 L860,420 L840,380 L920,360" fill="none" stroke="#ffdd00" stroke-width="5"/>
+  </g>
+
+  <!-- Cup + Saucer + Coffee Group (Pulsing Core) -->
+  <g class="pulse-core">
+    
+    <!-- Saucer Glow Shadow -->
+    <ellipse cx="500" cy="740" rx="340" ry="60" fill="#000000" opacity="0.75"/>
+    <ellipse cx="500" cy="740" rx="300" ry="45" fill="#ff4d00" opacity="0.4" filter="url(#superGlow)"/>
+
+    <!-- Glowing Saucer -->
+    <ellipse cx="500" cy="725" rx="320" ry="50" fill="url(#cupBody)" stroke="url(#goldTrim)" stroke-width="5"/>
+    <ellipse cx="500" cy="722" rx="270" ry="38" fill="#141113" stroke="#ffe259" stroke-width="2" opacity="0.8"/>
+    <ellipse cx="500" cy="720" rx="200" ry="25" fill="#291206"/>
+
+    <!-- Mug Shadow & Base -->
+    <ellipse cx="500" cy="650" rx="200" ry="30" fill="#000000" opacity="0.5"/>
+
+    <!-- Handle Behind/Beside Cup -->
+    <path d="M660,460 C780,470 790,620 650,630 C640,630 635,610 650,605 C730,595 730,495 650,485 Z" 
+          fill="url(#goldTrim)" filter="url(#neonPulse)"/>
+    <path d="M660,468 C760,478 770,610 655,620 C648,620 645,605 655,600 C715,590 715,502 655,492 Z" 
+          fill="url(#cupBody)"/>
+
+    <!-- Cup Body -->
+    <path d="M310,430 L360,650 C370,685 430,705 500,705 C570,705 630,685 640,650 L690,430 Z" 
+          fill="url(#cupBody)" stroke="url(#goldTrim)" stroke-width="4"/>
+
+    <!-- Cup Rim Outer -->
+    <ellipse cx="500" cy="430" rx="190" ry="55" fill="url(#cupBody)" stroke="url(#goldTrim)" stroke-width="6"/>
+
+    <!-- Crema / Coffee Surface -->
+    <ellipse cx="500" cy="432" rx="178" ry="48" fill="url(#coffeeCrema)"/>
+
+    <!-- Swirling Golden Crema Latte Art (Lightning Bolt & Flame Heart) -->
+    <g filter="url(#neonPulse)">
+      <!-- Swirl lines -->
+      <path d="M410,430 C430,465 570,465 590,430 C560,400 440,400 410,430 Z" 
+            fill="none" stroke="#fef3c7" stroke-width="4" opacity="0.6"/>
+      <!-- Inner Lightning Latte Icon -->
+      <polygon points="505,405 475,432 500,433 480,462 530,428 505,427" fill="#fffbeb" stroke="#f59e0b" stroke-width="2"/>
+      <ellipse cx="450" cy="425" rx="25" ry="10" fill="#fde68a" opacity="0.4" transform="rotate(-15 450 425)"/>
+      <ellipse cx="550" cy="425" rx="25" ry="10" fill="#fde68a" opacity="0.4" transform="rotate(15 550 425)"/>
+    </g>
+
+    <!-- CUP BRANDING / LOGO: ROMA -->
+    <g transform="translate(0, 10)">
+      <!-- Cyber Roma Badge Shield -->
+      <polygon points="500,490 560,515 545,585 500,615 455,585 440,515" 
+               fill="#100b0d" stroke="url(#goldTrim)" stroke-width="3" filter="url(#neonPulse)"/>
+      
+      <!-- Crown / Laurel above ROMA -->
+      <path d="M475,518 L485,530 L500,510 L515,530 L525,518 L520,538 L480,538 Z" fill="#ffd700"/>
+
+      <!-- ROMA Text on Cup -->
+      <text x="500" y="565" 
+            font-family="'Impact', 'Arial Black', sans-serif" 
+            font-size="34" 
+            font-weight="900" 
+            letter-spacing="5" 
+            fill="#ffffff" 
+            text-anchor="middle"
+            filter="url(#superGlow)">ROMA</text>
+      
+      <text x="500" y="565" 
+            font-family="'Impact', 'Arial Black', sans-serif" 
+            font-size="34" 
+            font-weight="900" 
+            letter-spacing="5" 
+            fill="#ffdd00" 
+            text-anchor="middle">ROMA</text>
+
+      <text x="500" y="588" 
+            font-family="system-ui, sans-serif" 
+            font-size="10" 
+            font-weight="800" 
+            letter-spacing="3" 
+            fill="#ff8c00" 
+            text-anchor="middle">ESPRESSO INTENSO</text>
+    </g>
+
+    <!-- High-voltage Electric Arcs Wrapping The Cup -->
+    <g class="zap-active" filter="url(#superGlow)">
+      <path d="M330,470 L350,510 L335,530 L365,580 L350,620" fill="none" stroke="#00f0ff" stroke-width="4"/>
+      <path d="M670,470 L650,520 L665,545 L635,590 L650,630" fill="none" stroke="#ffe600" stroke-width="4"/>
+      <path d="M420,685 L460,675 L480,695 L530,680 L560,690" fill="none" stroke="#ff0055" stroke-width="3.5"/>
+    </g>
+
+  </g> <!-- End pulse-core -->
+
+  <!-- RISING SUPERCHARGED COFFEE STEAM (Animated SVG Waves) -->
+  <g filter="url(#superGlow)">
+    <!-- Steam wave 1 -->
+    <path class="steam-1" d="M460,390 C430,330 520,280 470,210 C430,160 500,120 460,60" 
+          fill="none" stroke="url(#goldTrim)" stroke-width="12" stroke-linecap="round"/>
+    <!-- Steam wave 2 -->
+    <path class="steam-2" d="M520,390 C560,320 480,270 540,190 C580,140 510,100 550,40" 
+          fill="none" stroke="#ff3b00" stroke-width="10" stroke-linecap="round"/>
+    <!-- Steam wave 3 (Cyan electric resonance) -->
+    <path class="steam-1" d="M490,400 C520,340 450,290 500,220 C540,170 470,110 510,50" 
+          fill="none" stroke="#00f2ff" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+  </g>
+
+  <!-- FLYING TURBO COFFEE BEANS WITH PLASMA GLOW -->
+  <!-- Bean 1: Top Left -->
+  <g class="bean-float-1" filter="url(#neonPulse)">
+    <ellipse cx="200" cy="380" rx="35" ry="24" fill="#3b1506" stroke="#f59e0b" stroke-width="3" transform="rotate(-30 200 380)"/>
+    <path d="M185,365 C195,380 205,380 215,395" stroke="#fef08a" stroke-width="3" fill="none"/>
+    <!-- Spark aura -->
+    <circle cx="230" cy="360" r="5" fill="#00ffff"/>
+    <line x1="200" y1="380" x2="140" y2="420" stroke="#ffaa00" stroke-width="3" stroke-dasharray="6 6"/>
+  </g>
+
+  <!-- Bean 2: Top Right -->
+  <g class="bean-float-2" filter="url(#neonPulse)">
+    <ellipse cx="800" cy="360" rx="38" ry="25" fill="#451a03" stroke="#ff3700" stroke-width="3" transform="rotate(35 800 360)"/>
+    <path d="M785,345 C795,360 805,360 815,375" stroke="#fed7aa" stroke-width="3.5" fill="none"/>
+    <circle cx="765" cy="340" r="6" fill="#ffe600"/>
+    <line x1="800" y1="360" x2="870" y2="390" stroke="#ff0055" stroke-width="3" stroke-dasharray="8 6"/>
+  </g>
+
+  <!-- Bean 3: Bottom Left -->
+  <g class="bean-float-3" filter="url(#neonPulse)">
+    <ellipse cx="170" cy="650" rx="30" ry="20" fill="#2e1005" stroke="#00f2ff" stroke-width="2.5" transform="rotate(20 170 650)"/>
+    <path d="M158,642 C168,650 172,650 182,658" stroke="#ffe259" stroke-width="2.5" fill="none"/>
+  </g>
+
+  <!-- Bean 4: Bottom Right -->
+  <g class="bean-float-4" filter="url(#neonPulse)">
+    <ellipse cx="830" cy="660" rx="32" ry="22" fill="#361305" stroke="#ffd700" stroke-width="3" transform="rotate(-25 830 660)"/>
+    <path d="M818,650 C828,660 832,660 842,670" stroke="#fef08a" stroke-width="2.5" fill="none"/>
+  </g>
+
+  <!-- SPARKS & STARS ALL OVER -->
+  <g fill="#ffffff" opacity="0.9" filter="url(#neonPulse)">
+    <!-- Star cross 1 -->
+    <path d="M260,260 L264,275 L279,279 L264,283 L260,298 L256,283 L241,279 L256,275 Z" fill="#ffe600"/>
+    <!-- Star cross 2 -->
+    <path d="M740,240 L743,253 L756,256 L743,259 L740,272 L737,259 L724,256 L737,253 Z" fill="#00ffff"/>
+    <!-- Star cross 3 -->
+    <path d="M850,520 L853,533 L866,536 L853,539 L850,552 L847,539 L834,536 L847,533 Z" fill="#ff0077"/>
+    <!-- Star cross 4 -->
+    <path d="M140,520 L143,533 L156,536 L143,539 L140,552 L137,539 L124,536 L137,533 Z" fill="#ffaa00"/>
+    <circle cx="340" cy="180" r="4" fill="#fff"/>
+    <circle cx="670" cy="160" r="4" fill="#fffa65"/>
+    <circle cx="280" cy="740" r="5" fill="#00f2ff"/>
+    <circle cx="720" cy="750" r="5" fill="#ff5500"/>
+  </g>
+
+  <!-- TOP BANNER: HACKATHON OVERCHARGE HEADER -->
+  <g transform="translate(0, 50)">
+    <!-- Neon Pill Box -->
+    <rect x="250" y="25" width="500" height="42" rx="21" 
+          fill="#14020a" stroke="#ff0055" stroke-width="2.5" opacity="0.95" filter="url(#neonPulse)"/>
+    <text x="500" y="52" 
+          font-family="system-ui, -apple-system, sans-serif" 
+          font-size="16" 
+          font-weight="900" 
+          letter-spacing="5" 
+          fill="#00ffff" 
+          text-anchor="middle">
+      ⚡ HACKYEAH 2026 // OVERCHARGE PROTOCOL ⚡
+    </text>
+  </g>
+
+  <!-- BIG HERO DEDICATION TYPOGRAPHY FOR MARCIN -->
+  <g transform="translate(0, 135)">
+    <!-- Back Glow Title -->
+    <text x="500" y="50" 
+          font-family="'Impact', 'Arial Black', sans-serif" 
+          font-size="64" 
+          font-weight="900" 
+          letter-spacing="3" 
+          fill="#ff0055" 
+          text-anchor="middle" 
+          filter="url(#superGlow)">KAWUSIA DLA MARCINA!</text>
+
+    <!-- Foreground Gradient Title -->
+    <text x="500" y="50" 
+          font-family="'Impact', 'Arial Black', sans-serif" 
+          font-size="64" 
+          font-weight="900" 
+          letter-spacing="3" 
+          fill="url(#goldTrim)" 
+          text-anchor="middle">KAWUSIA DLA MARCINA!</text>
+
+    <!-- Badge / Subtitle -->
+    <rect x="300" y="70" width="400" height="26" rx="13" fill="#ff5500" opacity="0.9"/>
+    <text x="500" y="88" 
+          font-family="system-ui, -apple-system, sans-serif" 
+          font-size="13" 
+          font-weight="900" 
+          letter-spacing="3" 
+          fill="#ffffff" 
+          text-anchor="middle">
+      🔥 100% CZYSTEJ ENERGII ROMA 🔥
+    </text>
+  </g>
+
+  <!-- BOTTOM HUD / STATS CARDS: BURSTING WITH ENERGY -->
+  <g transform="translate(0, 830)">
+    
+    <!-- Background Plate for Stats -->
+    <rect x="80" y="10" width="840" height="110" rx="20" 
+          fill="#09010e" stroke="url(#goldTrim)" stroke-width="3" opacity="0.92" filter="url(#neonPulse)"/>
+
+    <!-- Left Stat: POWER LEVEL -->
+    <g transform="translate(130, 32)">
+      <text x="0" y="16" font-family="system-ui, sans-serif" font-size="12" font-weight="800" fill="#a1a1aa" letter-spacing="2">POWER LEVEL</text>
+      <text x="0" y="52" font-family="'Impact', sans-serif" font-size="38" font-weight="900" fill="#00f2ff" filter="url(#neonPulse)">> 9000%</text>
+      <text x="0" y="72" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#22c55e">⚡ OVERLOAD ACTIVE</text>
+    </g>
+
+    <!-- Center Stat: KODOWANIE / DEADLINE -->
+    <g transform="translate(410, 32)">
+      <text x="90" y="16" font-family="system-ui, sans-serif" font-size="12" font-weight="800" fill="#a1a1aa" letter-spacing="2" text-anchor="middle">STATUS MARCINA</text>
+      <text x="90" y="52" font-family="'Impact', sans-serif" font-size="34" font-weight="900" fill="#ffd700" text-anchor="middle" filter="url(#neonPulse)">KIPISZ ENERGIĄ!</text>
+      <text x="90" y="72" font-family="system-ui, sans-serif" font-size="11" font-weight="800" fill="#ff4d00" letter-spacing="1" text-anchor="middle">🚀 BŁYSKAWICZNY COMMIT</text>
+    </g>
+
+    <!-- Right Stat: ESPRESSO BOOST -->
+    <g transform="translate(730, 32)">
+      <text x="0" y="16" font-family="system-ui, sans-serif" font-size="12" font-weight="800" fill="#a1a1aa" letter-spacing="2">ROMA BUFF</text>
+      <text x="0" y="52" font-family="'Impact', sans-serif" font-size="38" font-weight="900" fill="#ff0077" filter="url(#neonPulse)">+1000 FPS</text>
+      <text x="0" y="72" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#eab308">☕ ZERO SENNOŚCI</text>
+    </g>
+
+    <!-- Corner Decorative Accents -->
+    <polygon points="80,25 95,10 80,10" fill="#00f2ff"/>
+    <polygon points="920,25 905,10 920,10" fill="#00f2ff"/>
+    <polygon points="80,105 95,120 80,120" fill="#ff0055"/>
+    <polygon points="920,105 905,120 920,120" fill="#ff0055"/>
+  </g>
+
+  <!-- Final Energy Voltage Arcs around bottom border -->
+  <line x1="120" y1="965" x2="880" y2="965" stroke="url(#goldTrim)" stroke-width="4" stroke-linecap="round" filter="url(#superGlow)"/>
+  <circle cx="500" cy="965" r="8" fill="#ffffff" filter="url(#superGlow)"/>
+
+</svg>
