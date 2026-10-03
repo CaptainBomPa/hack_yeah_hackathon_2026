@@ -9,7 +9,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
-    show-sql: true
+    show-sql: false
   flyway:
     enabled: false
 
@@ -20,4 +20,5 @@ control-layer:
 
 logging:
   level:
+    org.hibernate: WARN
     org.springframework.cloud.gateway: DEBUG
