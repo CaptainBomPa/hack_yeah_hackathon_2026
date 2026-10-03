@@ -19,10 +19,12 @@ export interface ControlTrace {
   policy: string // np. "model.allowlist", "semantic.injection"
   kind: 'deterministic' | 'semantic'
   action: GuardAction
+  /** Czas własny tej jednej kontroli, nie znacznik czasu w pipeline — sumowanie ma sens. */
   latencyMs: number
   detail: string | null
+  /** Etap guardu; brak dla kontroli bramkujących żądanie (allowlista modelu, budżet, audyt). */
+  stage?: 'input' | 'output' | 'tool_call'
   // rozszerzenia (kontrakt §5.1)
-  stage?: 'input' | 'output'
   mode?: 'off' | 'monitor' | 'redact' | 'require_approval' | 'block'
   confidence?: number
   threshold?: number
@@ -64,8 +66,10 @@ export interface GuardedChatResponse {
   policyHash?: string | null
   /** Ostatni prompt użytkownika po redakcji (null = bez zmian). Klient wysyła go w historii zamiast oryginału. */
   redactedPrompt?: string | null
+  /** Czasy z gatewaya (ChatLatency.java); `upstreamMs` brak, gdy żądanie nie doszło do modelu. */
+  latency?: { totalMs: number; upstreamMs?: number | null }
+  // rozszerzenia (kontrakt §5.1)
   status?: TechStatus
-  latency?: { totalMs: number; upstreamMs?: number }
   shadow?: { policyVersion: string; action: GuardAction; blockedBy?: string | null }
 }
 

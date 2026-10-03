@@ -88,26 +88,62 @@ public class ChatCompletionController {
             @RequestHeader(value = "X-Session-Id", required = false) String sessionId) {
         String requestId = UUID.randomUUID().toString();
         Instant occurredAt = Instant.now();
-        long startedAt = System.nanoTime();
+        var timing = new RequestTiming();
         // Jeden snapshot polityki na całe żądanie: zapis nowej wersji w trakcie nie miesza dwóch wersji.
         ActivePolicy policy = policySource.current();
 
         return ReactiveSecurityContextHolder.getContext()
                 .flatMap(context -> Mono.justOrEmpty(callerOf(context.getAuthentication())))
-                .flatMap(caller -> Mono.defer(() -> complete(policy, request, caller, requestId, startedAt))
+                .flatMap(caller -> Mono.defer(() -> complete(policy, request, caller, requestId, timing))
                         .onErrorResume(error -> {
                             log.error("requestId={} pipeline failed errorType={}", requestId, error.getClass().getSimpleName());
+                            // Tu latencja to czas do poddania się, a nie koszt kontroli — innego sensownego nie ma.
                             var trace = List.of(new ControlTrace("pipeline.availability", "deterministic", "block",
-                                    elapsedMillis(startedAt), "chat pipeline unavailable (fail-closed)"));
+                                    timing.totalMs(), "chat pipeline unavailable (fail-closed)"));
                             return Mono.just(ResponseEntity.status(503)
                                     .body(GuardedChatResponse.block(requestId, "pipeline.availability", trace)));
                         })
                         .map(response -> new Outcome(caller, response)))
                 .switchIfEmpty(Mono.fromSupplier(() -> new Outcome(null, unauthenticated(requestId))))
-                .flatMap(outcome -> audited(policy, outcome, request, sessionId, requestId, occurredAt, startedAt));
+                .flatMap(outcome -> audited(policy, outcome, request, sessionId, requestId, occurredAt, timing));
     }
 
     private record Outcome(Caller caller, ResponseEntity<GuardedChatResponse> response) {}
+
+    /**
+     * Czasy jednego żądania: całość od wejścia do kontrolera i osobno czas chronionego modelu.
+     * Czas modelu znamy dopiero w środku łańcucha reaktywnego, który zmienia wątki, więc pola
+     * są mutowalne i {@code volatile}. Per żądanie jest jedna instancja, bez współdzielenia.
+     */
+    static final class RequestTiming {
+
+        private final long startedAtNanos = System.nanoTime();
+        private volatile long upstreamStartedAtNanos;
+        private volatile long upstreamMs = -1;
+
+        /** Dla komponentów, które liczą własne czasy na surowym znaczniku (np. {@link ChatExecutionGate}). */
+        long startedAtNanos() {
+            return startedAtNanos;
+        }
+
+        long totalMs() {
+            return elapsedMillis(startedAtNanos);
+        }
+
+        void startUpstream() {
+            upstreamStartedAtNanos = System.nanoTime();
+        }
+
+        /** Zamyka pomiar modelu (odpowiedź albo błąd upstreamu) i zwraca jego czas własny. */
+        long stopUpstream() {
+            upstreamMs = upstreamStartedAtNanos == 0 ? 0 : elapsedMillis(upstreamStartedAtNanos);
+            return upstreamMs;
+        }
+
+        ChatLatency toLatency() {
+            return new ChatLatency(totalMs(), upstreamMs < 0 ? null : upstreamMs);
+        }
+    }
 
     /**
      * Zapis decyzji do audytu przed wysłaniem odpowiedzi (AUDIT-001). Bez treści wiadomości —
@@ -116,9 +152,10 @@ public class ChatCompletionController {
      */
     private Mono<ResponseEntity<GuardedChatResponse>> audited(ActivePolicy policy, Outcome outcome,
             ChatCompletionRequest request,
-            String sessionId, String requestId, Instant occurredAt, long startedAt) {
+            String sessionId, String requestId, Instant occurredAt, RequestTiming timing) {
         GuardedChatResponse body = outcome.response().getBody();
         Caller caller = outcome.caller();
+        ChatLatency latency = timing.toLatency();
         var entry = new AuditEntry(
                 requestId,
                 occurredAt,
@@ -129,7 +166,7 @@ public class ChatCompletionController {
                 body.action(),
                 body.blockedBy(),
                 outcome.response().getStatusCode().value(),
-                elapsedMillis(startedAt),
+                latency.totalMs(),
                 body.usage() == null ? null : body.usage().promptTokens(),
                 body.usage() == null ? null : body.usage().completionTokens(),
                 request.messages().size(),
@@ -137,7 +174,8 @@ public class ChatCompletionController {
                 policy.version());
         var stamped = ResponseEntity.status(outcome.response().getStatusCode())
                 .headers(outcome.response().getHeaders())
-                .body(body.withPolicy(policy.version(), policy.hash()));
+                .body(body.withPolicy(policy.version(), policy.hash()).withLatency(latency));
+        long auditStartedAt = System.nanoTime();
         return Mono.fromRunnable(() -> auditLog.append(entry))
                 .subscribeOn(Schedulers.boundedElastic())
                 .thenReturn(stamped)
@@ -148,38 +186,45 @@ public class ChatCompletionController {
                         return Mono.just(stamped);
                     }
                     var trace = new ArrayList<>(body.trace());
-                    trace.add(new ControlTrace(AUDIT_POLICY, "deterministic", "block", elapsedMillis(startedAt),
+                    trace.add(new ControlTrace(AUDIT_POLICY, "deterministic", "block", elapsedMillis(auditStartedAt),
                             "audit log unavailable (fail-closed)"));
                     return Mono.just(ResponseEntity.status(503)
                             .body(GuardedChatResponse.block(requestId, AUDIT_POLICY, trace)
-                                    .withPolicy(policy.version(), policy.hash())));
+                                    .withPolicy(policy.version(), policy.hash())
+                                    .withLatency(timing.toLatency())));
                 });
     }
 
     private Mono<ResponseEntity<GuardedChatResponse>> complete(ActivePolicy policy, ChatCompletionRequest request,
             Caller caller,
-            String requestId, long startedAt) {
+            String requestId, RequestTiming timing) {
+        // Każdy wpis w trace dostaje czas własny swojej kontroli (ControlTrace.latencyMs),
+        // więc poniżej każdy krok ma swój znacznik startu, a nie wspólny start żądania.
+        long allowlistStartedAt = System.nanoTime();
         var allowedModel = modelCatalog.resolveAllowed(policy, request.model());
+        long allowlistMs = elapsedMillis(allowlistStartedAt);
         if (allowedModel.isEmpty()) {
             log.info("requestId={} model={} action=block reason=not-allowed", requestId, request.model());
             var trace = List.of(new ControlTrace(
                     MODEL_ALLOWLIST_POLICY,
                     "deterministic",
                     "block",
-                    elapsedMillis(startedAt),
+                    allowlistMs,
                     "model not allowed: " + request.model()));
             return Mono.just(ResponseEntity.status(403)
                     .body(GuardedChatResponse.block(requestId, MODEL_ALLOWLIST_POLICY, trace)));
         }
 
-        if (!modelAccessPolicy.allowsModel(policy, caller.role(), request.model())) {
+        long accessStartedAt = System.nanoTime();
+        boolean roleMayUseModel = modelAccessPolicy.allowsModel(policy, caller.role(), request.model());
+        if (!roleMayUseModel) {
             log.info("requestId={} caller={} role={} model={} action=block reason=policy",
                     requestId, caller.login(), caller.role(), request.model());
             var policyTrace = List.of(new ControlTrace(
                     MODEL_ACCESS_POLICY,
                     "deterministic",
                     "block",
-                    elapsedMillis(startedAt),
+                    elapsedMillis(accessStartedAt),
                     "role " + caller.role() + " may not use model " + request.model()));
             return Mono.just(ResponseEntity.status(403)
                     .body(GuardedChatResponse.block(requestId, MODEL_ACCESS_POLICY, policyTrace)));
@@ -189,14 +234,15 @@ public class ChatCompletionController {
         Duration timeout = modelCatalog.modelTimeout();
         // Guards run on boundedElastic while the deadline is observed on a timer thread.
         var trace = new CopyOnWriteArrayList<ControlTrace>();
-        trace.add(new ControlTrace(MODEL_ALLOWLIST_POLICY, "deterministic", "allow", elapsedMillis(startedAt), null));
+        trace.add(new ControlTrace(MODEL_ALLOWLIST_POLICY, "deterministic", "allow", allowlistMs, null));
 
-        return executionGate.execute(policy, caller.login(), caller.role(), requestId, startedAt, request.messages(), trace,
-                execution -> completeLimited(policy, request, requestId, startedAt, model, timeout, trace, execution));
+        return executionGate.execute(policy, caller.login(), caller.role(), requestId, timing.startedAtNanos(),
+                request.messages(), trace,
+                execution -> completeLimited(policy, request, requestId, timing, model, timeout, trace, execution));
     }
 
     private Mono<ResponseEntity<GuardedChatResponse>> completeLimited(ActivePolicy policy, ChatCompletionRequest request,
-            String requestId, long startedAt, ModelCatalogProperties.ModelEntry model, Duration timeout,
+            String requestId, RequestTiming timing, ModelCatalogProperties.ModelEntry model, Duration timeout,
             List<ControlTrace> trace, Execution execution) {
         var budget = execution.budget();
         return Mono.fromCallable(() -> guardInput(policy, requestId, request.messages()))
@@ -217,15 +263,23 @@ public class ChatCompletionController {
                             .withMaxTokens(budget.maxOutputTokens());
                     return upstreamClient
                             .complete(model.baseUrl(), guardedRequest, timeout)
-                            .doOnSubscribe(subscription -> execution.upstreamStarted())
-                            .doOnNext(response -> execution.upstreamFinished(tokensToCharge(response, budget.reservedTokens())))
+                            .doOnSubscribe(subscription -> {
+                                execution.upstreamStarted();
+                                timing.startUpstream();
+                            })
+                            .doOnNext(response -> {
+                                // Czas modelu domykamy przed guardami OUTPUT, żeby ich tu nie wliczyć.
+                                timing.stopUpstream();
+                                execution.upstreamFinished(tokensToCharge(response, budget.reservedTokens()));
+                            })
                             .flatMap(response -> execution.reconcile(tokensToCharge(response, budget.reservedTokens()))
                                     .flatMap(usedAfter -> Mono.fromCallable(() -> buildResponse(
                                                     policy, requestId, input, response, trace,
                                                     budget.toUsage(usedAfter)))
                                             .subscribeOn(Schedulers.boundedElastic())))
-                            .doOnNext(entity -> log.info("requestId={} model={} action={} latencyMs={}",
-                                    requestId, request.model(), entity.getBody().action(), elapsedMillis(startedAt)));
+                            .doOnNext(entity -> log.info("requestId={} model={} action={} latencyMs={} upstreamMs={}",
+                                    requestId, request.model(), entity.getBody().action(),
+                                    timing.totalMs(), timing.toLatency().upstreamMs()));
                 })
                 .onErrorResume(UpstreamModelException.class, error -> {
                     log.warn("requestId={} model={} action=block reason=upstream-error",
@@ -234,7 +288,7 @@ public class ChatCompletionController {
                             "upstream.availability",
                             "deterministic",
                             "block",
-                            elapsedMillis(startedAt),
+                            timing.stopUpstream(),
                             error.getMessage()));
                     long chargedTokens = error.requestNotSent() ? 0 : budget.reservedTokens();
                     if (!error.upstreamMayStillBeRunning()) {

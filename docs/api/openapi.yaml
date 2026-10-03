@@ -314,11 +314,38 @@ components:
         latencyMs:
           type: integer
           format: int64
+          description: |
+            Czas własny tej jednej kontroli, nie znacznik czasu w pipeline — suma po wpisach
+            `trace` to realny koszt kontroli w żądaniu.
           example: 3
         detail:
           type: string
           nullable: true
           description: Opis dla człowieka (np. powód blokady). Brak danych wrażliwych.
+        stage:
+          type: string
+          nullable: true
+          enum: [input, output, tool_call]
+          description: |
+            Etap łańcucha guardów. Null dla kontroli bramkujących całe żądanie
+            (`model.allowlist`, `policy.model-access`, `budget.*`, `audit.write`).
+          example: input
+    ChatLatency:
+      type: object
+      description: Czasy żądania zmierzone w gatewayu (ChatLatency.java).
+      required: [totalMs]
+      properties:
+        totalMs:
+          type: integer
+          format: int64
+          description: Od wejścia żądania do kontrolera do złożenia odpowiedzi (bez zapisu audytu).
+          example: 23120
+        upstreamMs:
+          type: integer
+          format: int64
+          nullable: true
+          description: Czas wywołania chronionego modelu. Null, gdy żądanie do modelu nie doszło.
+          example: 22480
     Action:
       type: string
       enum: [allow, redact, block]
@@ -359,3 +386,8 @@ components:
           description: Zużycie tokenów. Null przy `block` lub niepełnym/brakującym usage providera; nieznane zużycie rozliczane do maksimum rezerwacji budżetu.
           allOf:
             - $ref: '#/components/schemas/Usage'
+        latency:
+          nullable: true
+          description: Czasy żądania; pozwalają UI rozdzielić koszt kontroli od czasu modelu.
+          allOf:
+            - $ref: '#/components/schemas/ChatLatency'

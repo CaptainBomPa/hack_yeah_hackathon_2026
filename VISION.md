@@ -100,6 +100,14 @@ Kandydaci na biblioteki i sposób ich oceny są opisani wyłącznie w
 Każda kontrola zwraca wspólny `ControlResult`: identyfikator polityki, wynik, proponowaną akcję,
 pewność, krótki powód i czas wykonania. Java agreguje wyniki według aktywnej wersji polityki.
 
+Czas wykonania jest **czasem własnym pojedynczej kontroli**, nie znacznikiem czasu w pipeline:
+tylko wtedy suma po kontrolach odpowiada na pytanie „ile kosztuje warstwa kontroli”, a Explainable
+Verdict (§5 E) może uczciwie rozdzielić koszt bramki od czasu chronionego modelu. Odpowiedź
+gatewaya podaje obok tego czas całego żądania i czas modelu (`latency.totalMs`,
+`latency.upstreamMs`), bo bez nich UI musiałby zgadywać resztę z pomiaru w przeglądarce. Wpis
+kontroli należącej do łańcucha guardów nosi też swój etap (`input`, `output`, `tool_call`);
+kontrole bramkujące samo żądanie (allowlista modelu, budżet, audyt) etapu nie mają.
+
 Każda kontrola ma próg oraz tryb z polityki:
 
 | Tryb | Zachowanie |

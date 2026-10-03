@@ -6,6 +6,7 @@ import ActionBadge from '../components/ActionBadge'
 import DecisionXray from '../components/DecisionXray'
 import { RedactedText } from '../components/HighlightedText'
 import PageHeader from '../components/PageHeader'
+import { formatMs, summarizeLatency } from '../lib/latency'
 import { CUSTOM_MODEL, usePlayground, type Turn } from '../playground/PlaygroundContext'
 
 const EXAMPLES = [
@@ -232,6 +233,8 @@ function BlockedNotice({ response: r }: { response: GuardedChatResponse }) {
 
 function TurnView({ turn, selected, onSelect }: { turn: Turn; selected: boolean; onSelect: () => void }) {
   const r = turn.response
+  // Czas kontroli wprost w wątku rozmowy: bez tego "20 s" wygląda jak koszt bramki, a nie modelu.
+  const timing = r ? summarizeLatency(r.trace, r.latency?.totalMs ?? turn.latencyMs, r.latency?.upstreamMs ?? undefined) : null
   return (
     <div
       onClick={onSelect}
@@ -252,7 +255,11 @@ function TurnView({ turn, selected, onSelect }: { turn: Turn; selected: boolean;
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <ActionBadge action={r.action} />
             {r.blockedBy && <code>{r.blockedBy}</code>}
-            {turn.latencyMs !== undefined && <span>{(turn.latencyMs / 1000).toFixed(1)} s</span>}
+            {timing?.totalMs !== undefined && (
+              <span title="Total time in the gateway, and how much of it the controls took">
+                {formatMs(timing.totalMs)} · checks {formatMs(timing.controlsMs)}
+              </span>
+            )}
           </div>
           {r.message ? (
             <div

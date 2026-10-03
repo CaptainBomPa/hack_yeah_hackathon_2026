@@ -163,25 +163,31 @@ Response, **stan obecny** (`GuardedChatResponse.java`):
   "message": { "role": "assistant", "content": "…" },
   "blockedBy": null,
   "trace": [
-    { "policy": "model.allowlist", "kind": "deterministic", "action": "allow", "latencyMs": 3, "detail": null }
+    { "policy": "model.allowlist", "kind": "deterministic", "action": "allow", "latencyMs": 3, "detail": null, "stage": null },
+    { "policy": "SEC-GITLEAKS", "kind": "deterministic", "action": "allow", "latencyMs": 1, "detail": null, "stage": "input" }
   ],
-  "usage": { "promptTokens": 18, "completionTokens": 40 }
+  "usage": { "promptTokens": 18, "completionTokens": 40 },
+  "latency": { "totalMs": 23120, "upstreamMs": 22480 }
 }
 ```
+`ControlTrace.latencyMs` to **czas własny** jednej kontroli (nie znacznik czasu w pipeline), więc
+suma po `trace` jest realnym kosztem kontroli. `stage` jest ustawiony tylko dla guardów z łańcucha;
+kontrole bramkujące żądanie (`model.allowlist`, `policy.model-access`, `budget.*`, `audit.write`)
+mają `null`. `latency.upstreamMs` jest `null`, gdy żądanie nie dotarło do modelu. Panel „Timing”
+w X-ray (`frontend/src/lib/latency.ts`) liczy z tych trzech pól rozkład czasu żądania.
 
 Statusy HTTP dziś: `200` allow, `400` walidacja (`blockedBy: "request.validation"`),
 `403` model spoza allowlisty (`model.allowlist`), `502` awaria/timeout modelu (`upstream-error`).
 
-**Rozszerzenia proponowane pod X-ray** (wszystkie opcjonalne, addytywne):
+**Rozszerzenia proponowane pod X-ray** (wszystkie opcjonalne, addytywne; `latency` i `stage` już
+są w backendzie — patrz wyżej):
 
 ```jsonc
 {
   "policyVersion": "v13", "policyHash": "a1b2c3d",
   "status": "ok",                       // TechStatus: czy któraś zależność była degraded/error
-  "latency": { "totalMs": 412, "upstreamMs": 350 },
   "trace": [{
     "policy": "semantic.injection", "kind": "semantic", "action": "block", "latencyMs": 41, "detail": "…",
-    "stage": "input",                   // input | output
     "mode": "block",                    // ControlMode z polityki
     "confidence": 0.93,                 // ControlResult.confidence (VISION §4)
     "threshold": 0.8,

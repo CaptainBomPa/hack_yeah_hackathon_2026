@@ -102,7 +102,7 @@ public class AuditService implements AuditLog {
         int max = properties.maxFieldLength();
         List<ControlTrace> trace = e.trace() == null ? null : e.trace().stream()
                 .map(t -> new ControlTrace(AuditSanitizer.sanitize(t.policy(), max), t.kind(), t.action(),
-                        t.latencyMs(), AuditSanitizer.sanitize(t.detail(), max)))
+                        t.latencyMs(), AuditSanitizer.sanitize(t.detail(), max), t.stage()))
                 .toList();
         // Milisekundy: tyle bez straty przechowa każda baza, a hash liczony jest z epoch millis.
         return new AuditEntry(e.requestId(), e.occurredAt().truncatedTo(ChronoUnit.MILLIS),

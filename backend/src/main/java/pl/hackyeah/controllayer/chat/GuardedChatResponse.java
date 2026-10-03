@@ -18,7 +18,8 @@ public record GuardedChatResponse(
         BudgetUsage budget, // null, gdy rola wywołującego nie ma skonfigurowanego limitu
         Long policyVersion, // wersja polityki, która podjęła decyzję (docs/policy-management-plan.md)
         String policyHash,
-        String redactedPrompt) { // ostatni prompt użytkownika po redakcji; null, gdy nic nie zredagowano
+        String redactedPrompt, // ostatni prompt użytkownika po redakcji; null, gdy nic nie zredagowano
+        ChatLatency latency) { // czasy żądania; uzupełniane na końcu, bo totalMs znamy dopiero wtedy
 
     public GuardedChatResponse {
         trace = List.copyOf(trace);
@@ -26,17 +27,17 @@ public record GuardedChatResponse(
 
     public static GuardedChatResponse allow(
             String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace, BudgetUsage budget) {
-        return new GuardedChatResponse(requestId, "allow", message, null, trace, usage, budget, null, null, null);
+        return new GuardedChatResponse(requestId, "allow", message, null, trace, usage, budget, null, null, null, null);
     }
 
     public static GuardedChatResponse redact(
             String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace, BudgetUsage budget) {
-        return new GuardedChatResponse(requestId, "redact", message, null, trace, usage, budget, null, null, null);
+        return new GuardedChatResponse(requestId, "redact", message, null, trace, usage, budget, null, null, null, null);
     }
 
     public static GuardedChatResponse block(
             String requestId, String blockedBy, List<ControlTrace> trace, BudgetUsage budget) {
-        return new GuardedChatResponse(requestId, "block", null, blockedBy, trace, null, budget, null, null, null);
+        return new GuardedChatResponse(requestId, "block", null, blockedBy, trace, null, budget, null, null, null, null);
     }
 
     public static GuardedChatResponse block(String requestId, String blockedBy, List<ControlTrace> trace) {
@@ -46,7 +47,7 @@ public record GuardedChatResponse(
     /** Ta sama odpowiedź z oznaczeniem wersji polityki, która ją wyprodukowała. */
     public GuardedChatResponse withPolicy(long version, String hash) {
         return new GuardedChatResponse(requestId, action, message, blockedBy, trace, usage, budget, version, hash,
-                redactedPrompt);
+                redactedPrompt, latency);
     }
 
     /**
@@ -55,6 +56,12 @@ public record GuardedChatResponse(
      */
     public GuardedChatResponse withRedactedPrompt(String prompt) {
         return new GuardedChatResponse(requestId, action, message, blockedBy, trace, usage, budget, policyVersion,
-                policyHash, prompt);
+                policyHash, prompt, latency);
+    }
+
+    /** Ta sama odpowiedź ze zmierzonymi czasami żądania. */
+    public GuardedChatResponse withLatency(ChatLatency measured) {
+        return new GuardedChatResponse(requestId, action, message, blockedBy, trace, usage, budget, policyVersion,
+                policyHash, redactedPrompt, measured);
     }
 }
