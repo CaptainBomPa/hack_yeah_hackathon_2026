@@ -2,7 +2,9 @@
 
 Jedyne źródło prawdy o tym, co budujemy i jak. `README.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`
 odwołują się do tego pliku zamiast powielać treść — jeśli coś tu zmienicie, zmieniło się
-wszędzie. Zadanie konkursowe: [`CRIETRIA AI Control Layer.pdf`](CRIETRIA%20AI%20Control%20Layer.pdf).
+wszędzie. Najważniejszym dokumentem źródłowym zadania, nadrzędnym wobec tej wizji, jest
+[`CRITERIA AI Control Layer.pdf`](project-spec/CRITERIA%20AI%20Control%20Layer.pdf). `VISION.md`
+precyzuje naszą implementację i nie może być sprzeczny z wymaganiami tego dokumentu.
 
 ## 1. Cel
 

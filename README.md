@@ -5,8 +5,9 @@ deterministyczne + semantyczne, budżetowanie, audyt i dashboard bezpieczeństwa
 
 **Zanim zaczniesz pracować w tym repo (człowiek czy agent AI) — przeczytaj
 [`VISION.md`](VISION.md).** To jedyne źródło prawdy o architekturze, stacku, podziale
-kontroli między zespoły i planie test suite. Zadanie konkursowe:
-[`CRIETRIA AI Control Layer.pdf`](CRIETRIA%20AI%20Control%20Layer.pdf).
+kontroli między zespoły i planie test suite. Najważniejszym dokumentem źródłowym zadania,
+nadrzędnym wobec naszych opisów rozwiązania, jest
+[`CRITERIA AI Control Layer.pdf`](project-spec/CRITERIA%20AI%20Control%20Layer.pdf).
 
 ## Struktura repo
 

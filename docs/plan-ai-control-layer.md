@@ -1,6 +1,8 @@
 # AI Control Layer — analiza zadania i wstępny plan implementacji
 
-Źródła: `project-spec/CRIETRIA AI Control Layer.pdf`, `project-spec/RULES AI Control Layer.pdf`.
+Najważniejszym dokumentem źródłowym zadania, nadrzędnym wobec tego planu, jest
+[`CRITERIA AI Control Layer.pdf`](../project-spec/CRITERIA%20AI%20Control%20Layer.pdf).
+Uzupełniają go formalne [`RULES AI Control Layer.pdf`](../project-spec/RULES%20AI%20Control%20Layer.pdf).
 
 ## Podsumowanie zadania
 
