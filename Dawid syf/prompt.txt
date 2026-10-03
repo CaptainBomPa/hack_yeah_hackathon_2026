@@ -1,0 +1,911 @@
+Pracuję nad projektem konkursowym „AI Control Layer”.
+
+Celem projektu jest stworzenie lekkiej, elastycznej warstwy bezpieczeństwa działającej jako gateway / proxy / middleware / SDK wrapper pomiędzy aplikacjami, agentami AI, MCP, LLM-ami i narzędziami.
+
+Jednym z wymaganych elementów są:
+
+**Controls / Guardrails**
+
+1. Deterministic (Non-AI): np. pattern matching (wykrywanie PII lub secrets), sprawdzanie uwierzytelnienia i wymagań dostępu itp.
+
+Chcę teraz przygotować **bardzo dokładny research dotyczący Deterministic / Non-AI Security Controls** dla LLM, Agentic AI, AI Agents, MCP i systemów generatywnej AI.
+
+## WAŻNE — PRACUJ BEZPOŚREDNIO W REPOZYTORIUM
+
+Repozytorium **nie zawiera obecnie takiej analizy**.
+
+Nie szukaj istniejącej dokumentacji security, żeby ją rozbudowywać.
+
+Utwórz nowy katalog:
+
+```text
+docs/deterministic/
+```
+
+Cała analiza dotycząca tego zadania ma być zapisywana właśnie tam.
+
+Nie twórz `docs/security/`, `docs/ai-security/` ani innych alternatywnych katalogów.
+
+---
+
+# 1. Dokumentacja ma powstawać CASE-BY-CASE
+
+Nie twórz jednej wielkiej analizy.
+
+Każdy istotny problem / atak / mechanizm ochrony ma być opisany w **osobnym pliku Markdown**.
+
+Przykładowo:
+
+```text
+docs/
+└── deterministic/
+    ├── README.md
+    ├── 01-pii-detection.md
+    ├── 02-secret-detection.md
+    ├── 03-authentication.md
+    ├── 04-authorization.md
+    ├── 05-model-allowlist.md
+    ├── 06-mcp-tool-authorization.md
+    ├── 07-mcp-argument-validation.md
+    ├── 08-filesystem-path-restriction.md
+    ├── 09-network-domain-restriction.md
+    ├── 10-rate-limiting.md
+    ├── 11-token-budget.md
+    ├── 12-tool-call-limit.md
+    ├── 13-runaway-agent.md
+    ├── 14-output-data-leakage.md
+    ├── 15-threat-signature-matching.md
+    ├── ...
+    ├── architecture.md
+    ├── rule-model.md
+    ├── decision-model.md
+    ├── implementation-backlog.md
+    ├── test-catalog.md
+    └── sources.md
+```
+
+To jest tylko przykład. **Ostateczna liczba i lista plików ma wynikać z researchu.**
+
+Jeżeli znajdziesz ważny przypadek, którego tutaj nie wymieniłem, utwórz dla niego kolejny plik.
+
+---
+
+# 2. Nie ograniczaj researchu do przykładów z zadania
+
+Traktuj wymaganie:
+
+> Deterministic (Non-AI)
+
+jako szeroką kategorię security controls.
+
+Nie ograniczaj się do:
+
+* PII,
+* secrets,
+* authentication,
+* authorization.
+
+Poszukaj wszystkich istotnych przypadków, które można sensownie ograniczyć **bez użycia AI**.
+
+Interesują mnie m.in.:
+
+* regex / pattern matching,
+* parser-based validation,
+* schema validation,
+* allowlist / denylist,
+* RBAC,
+* ABAC,
+* ACL,
+* authentication,
+* authorization,
+* resource permissions,
+* model allowlists,
+* tool allowlists,
+* MCP server allowlists,
+* parameter validation,
+* JSON Schema,
+* URI validation,
+* path validation,
+* domain validation,
+* command validation,
+* normalization,
+* canonicalization,
+* encoding validation,
+* hash verification,
+* signature verification,
+* IOC matching,
+* threat signatures,
+* CVE-based blocking,
+* rate limiting,
+* quotas,
+* concurrency limits,
+* token limits,
+* execution timeouts,
+* tool-call limits,
+* chain-depth limits,
+* counters,
+* state machines,
+* sequence validation,
+* loop detection,
+* repeated-operation detection,
+* budget controls,
+* DLP,
+* secret scanning,
+* output filtering,
+* resource governance,
+* supply-chain controls.
+
+---
+
+# 3. Zrób aktualny research internetowy
+
+To ma być research oparty na rzeczywistych źródłach.
+
+W pierwszej kolejności przeanalizuj:
+
+* OWASP GenAI Security Project
+* OWASP Top 10 for LLM Applications
+* OWASP Agentic AI
+* OWASP MCP Security
+* MITRE ATLAS
+* NIST AI RMF i inne relevantne materiały NIST
+* CISA
+* CERT / security advisories
+* CVE / NVD
+* oficjalne advisories projektów i frameworków
+* dokumentacje security
+* publikacje naukowe i techniczne
+* raporty z rzeczywistych incydentów
+
+Szukaj także konkretnych historycznych exploitów i realnych przypadków.
+
+Nie interesuje mnie wyłącznie opis typu:
+
+> „Prompt injection jest zagrożeniem.”
+
+Chcę wiedzieć:
+
+* jaki był mechanizm,
+* jak atak wyglądał,
+* jaki komponent był podatny,
+* jaki był wpływ,
+* jak można było temu zapobiec,
+* czy można było użyć deterministic control,
+* jakie są ograniczenia takiej ochrony.
+
+---
+
+# 4. DLA KAŻDEGO CASE utwórz osobny plik
+
+Każdy plik powinien mieć możliwie podobną strukturę.
+
+Przykład:
+
+```markdown
+# PII Detection
+
+## 1. Overview
+
+## 2. Threat / Attack
+
+## 3. Real-World Evidence
+
+## 4. Deterministic Detection
+
+## 5. Detection Pipeline
+
+## 6. Possible Actions
+
+## 7. Bypass / Limitations
+
+## 8. Deterministic vs AI
+
+## 9. Implementation Options
+
+## 10. Existing Open Source
+
+## 11. Proposed Control
+
+## 12. Example Configuration
+
+## 13. Example Requests
+
+## 14. Testing
+
+## 15. Sources
+```
+
+Dostosuj sekcje do konkretnego case.
+
+Nie każdy przypadek musi mieć identyczną treść, ale dokumentacja powinna być spójna.
+
+---
+
+# 5. Co MUSI znaleźć się w każdym case
+
+Dla każdego przypadku odpowiedz na pytania:
+
+### Problem
+
+Co chronimy?
+
+### Threat / Attack
+
+Przed czym dokładnie się bronimy?
+
+### Attack mechanism
+
+Jak działa atak?
+
+### Deterministic detection
+
+Jak wykryć go bez AI?
+
+### Enforcement point
+
+W którym miejscu AI Control Layer należy zastosować kontrolę?
+
+Np.:
+
+```text
+Request
+↓
+Authentication
+↓
+Normalization
+↓
+Policy resolution
+↓
+Deterministic control
+↓
+LLM / Agent / MCP
+↓
+Output control
+↓
+Response
+```
+
+### Action
+
+Co zrobić po wykryciu?
+
+* ALLOW
+* REDACT
+* BLOCK
+* RATE_LIMIT
+* QUARANTINE
+* REVIEW
+
+### Bypass
+
+Jak można ominąć tę kontrolę?
+
+To jest bardzo ważne.
+
+### Limitations
+
+Jakie są false positives / false negatives?
+
+### AI boundary
+
+Co możemy zrobić deterministic, a czego nie?
+
+### Implementation
+
+Jak można to zaimplementować w naszym projekcie?
+
+---
+
+# 6. Szczególnie mocno zbadaj PII
+
+Zbadaj:
+
+* email,
+* phone,
+* PESEL,
+* credit card,
+* IBAN,
+* bank information,
+* address,
+* date of birth,
+* government identifiers,
+* healthcare information,
+* names,
+* structured PII,
+* unstructured PII.
+
+Porównaj:
+
+* regex,
+* checksum,
+* parser,
+* structured-data inspection,
+* context-based deterministic checks,
+* Microsoft Presidio,
+* inne open source.
+
+Uwzględnij:
+
+* Unicode,
+* obfuscation,
+* encoding,
+* separators,
+* JSON,
+* YAML,
+* XML,
+* source code,
+* LLM output.
+
+---
+
+# 7. Szczególnie mocno zbadaj SECRET DETECTION
+
+Zbadaj:
+
+* API keys,
+* access tokens,
+* OAuth tokens,
+* JWT,
+* private keys,
+* SSH keys,
+* cloud credentials,
+* database passwords,
+* connection strings,
+* webhook secrets,
+* secrets w JSON/YAML,
+* secrets w source code,
+* secrets w outputach LLM.
+
+Przeanalizuj m.in.:
+
+* Gitleaks
+* TruffleHog
+* detect-secrets
+* Semgrep
+* inne odpowiednie rozwiązania.
+
+Uwzględnij:
+
+* entropy,
+* obfuscation,
+* partial secrets,
+* encoding,
+* false positives,
+* context-aware deterministic detection.
+
+---
+
+# 8. Szczególnie mocno zbadaj AUTHENTICATION / AUTHORIZATION
+
+Zbadaj:
+
+* authentication,
+* authorization,
+* RBAC,
+* ABAC,
+* ACL,
+* agent identity,
+* user identity,
+* tool permissions,
+* resource permissions,
+* model permissions,
+* tenant isolation,
+* environment restrictions,
+* production/staging separation.
+
+Wyjaśnij, dlaczego authorization musi być egzekwowana przez Control Layer zamiast polegania wyłącznie na decyzji agenta/LLM.
+
+---
+
+# 9. Szczególnie mocno zbadaj MCP
+
+MCP jest jednym z ważnych elementów naszego projektu.
+
+Zbadaj deterministic controls dla:
+
+* MCP server allowlist,
+* MCP tool allowlist,
+* denylist,
+* per-agent tool permissions,
+* per-user permissions,
+* tool argument validation,
+* JSON schema validation,
+* resource URI validation,
+* filesystem restrictions,
+* path traversal prevention,
+* network restrictions,
+* domain restrictions,
+* command restrictions,
+* read/write separation,
+* production restrictions,
+* tool-call limits,
+* tool chaining restrictions,
+* audit logging.
+
+Poszukaj także realnych MCP vulnerabilities / advisories / attack research.
+
+Dla każdego przypadku określ, czy można go ograniczyć deterministycznie.
+
+---
+
+# 10. Zbadaj STATEFUL / AGENTIC CONTROLS
+
+Nie analizuj wyłącznie pojedynczego promptu.
+
+Zbadaj:
+
+* runaway agents,
+* loops,
+* recursive tool use,
+* excessive agency,
+* privilege escalation,
+* repeated tool calls,
+* unusual operation sequences,
+* excessive resource usage,
+* token exhaustion,
+* time exhaustion,
+* repeated identical calls.
+
+Zastanów się, które można wykrywać przez:
+
+* counters,
+* thresholds,
+* state machine,
+* time windows,
+* graph/state validation,
+* session state.
+
+---
+
+# 11. Zbadaj HISTORYCZNE ATAKI I THREAT SIGNATURES
+
+Szukaj ataków, których wzorce można wykrywać deterministycznie.
+
+Uwzględnij m.in.:
+
+* malicious code execution,
+* unsafe deserialization,
+* model supply-chain attacks,
+* malicious model artifacts,
+* poisoned packages,
+* malicious repositories,
+* dangerous commands,
+* known exploit payloads,
+* CVEs,
+* IoCs,
+* hashes,
+* signatures.
+
+Dla każdego napisz:
+
+> Czy można zamienić ten problem na deterministic security rule?
+
+Jeżeli tak, zaproponuj jak.
+
+---
+
+# 12. Zbadaj OUTPUT SECURITY
+
+Nie skupiaj się tylko na requestach.
+
+Zbadaj możliwość deterministic validation:
+
+```text
+LLM output
+↓
+PII detection
+↓
+Secret detection
+↓
+Schema validation
+↓
+URL / destination validation
+↓
+Policy check
+↓
+ALLOW / REDACT / BLOCK
+```
+
+Przeanalizuj:
+
+* data leakage,
+* secrets,
+* PII,
+* prohibited destinations,
+* malformed structured output,
+* dangerous commands,
+* invalid tool arguments.
+
+---
+
+# 13. Zbadaj RESOURCE / BUDGET CONTROLS
+
+Zbadaj:
+
+* token limits,
+* request limits,
+* RPM,
+* concurrency,
+* execution time,
+* max tool calls,
+* chain depth,
+* daily budget,
+* monthly budget,
+* per-agent budget,
+* per-model budget,
+* per-user quota.
+
+Wyjaśnij, które mechanizmy można wykonać całkowicie deterministycznie.
+
+---
+
+# 14. Zbadaj istniejące open-source solutions
+
+Znajdź gotowe rozwiązania dla:
+
+* DLP,
+* secrets,
+* policy engines,
+* authorization,
+* rate limiting,
+* schema validation,
+* MCP security,
+* threat signatures,
+* AI gateways.
+
+Dla każdego wartościowego rozwiązania podaj:
+
+* nazwa,
+* link,
+* język,
+* licencja,
+* zastosowanie,
+* zalety,
+* wady,
+* trudność integracji,
+* możliwość działania lokalnie,
+* przydatność dla naszego projektu.
+
+Szczególnie interesują nas rozwiązania kompatybilne z:
+
+* Python,
+* FastAPI,
+* Docker,
+* PostgreSQL / SQLite,
+* React,
+* Ollama.
+
+---
+
+# 15. Utwórz CONTROL CATALOG
+
+Po utworzeniu case files przygotuj:
+
+```text
+docs/deterministic/README.md
+```
+
+README ma być indeksem całej dokumentacji.
+
+Powinna znaleźć się tam tabela:
+
+| ID | Control | Category | Threat | Detection | Action | Complexity | Priority | Documentation |
+| -- | ------- | -------- | ------ | --------- | ------ | ---------- | -------- | ------------- |
+
+Każdy wpis ma linkować do odpowiedniego pliku.
+
+Dodaj również:
+
+## MUST HAVE
+
+Kontrole, które powinniśmy zaimplementować.
+
+## SHOULD HAVE
+
+Kontrole, które mocno zwiększają wartość projektu.
+
+## NICE TO HAVE
+
+Dodatkowe mechanizmy.
+
+## NOT RECOMMENDED
+
+Rzeczy, których nie warto implementować w ramach tego projektu.
+
+Każdą decyzję uzasadnij.
+
+---
+
+# 16. Utwórz ARCHITECTURE
+
+Utwórz:
+
+```text
+docs/deterministic/architecture.md
+```
+
+Zaproponuj architekturę deterministic engine.
+
+Uwzględnij:
+
+```text
+Request
+↓
+Canonicalization
+↓
+Authentication
+↓
+Policy Resolution
+↓
+Deterministic Rules
+↓
+Decision
+↓
+LLM / Agent / MCP
+↓
+Output Controls
+↓
+Decision
+↓
+Response
+```
+
+oraz:
+
+* session state,
+* counters,
+* budgets,
+* rate limits,
+* threat intelligence,
+* audit,
+* telemetry,
+* hot reload configuration.
+
+---
+
+# 17. Utwórz RULE MODEL
+
+Utwórz:
+
+```text
+docs/deterministic/rule-model.md
+```
+
+Zaprojektuj uniwersalny model reguły.
+
+Rozważ:
+
+```yaml
+id:
+name:
+category:
+enabled:
+priority:
+scope:
+conditions:
+matcher:
+action:
+severity:
+threshold:
+exceptions:
+metadata:
+```
+
+Nie zakładaj, że ten model jest idealny.
+
+Zaprojektuj go na podstawie przeprowadzonego researchu.
+
+Pokaż przykłady YAML dla różnych kategorii controls.
+
+---
+
+# 18. Utwórz DECISION MODEL
+
+Utwórz:
+
+```text
+docs/deterministic/decision-model.md
+```
+
+Zaprojektuj spójny model decyzji:
+
+```text
+ALLOW
+REDACT
+BLOCK
+```
+
+oraz oceń:
+
+```text
+RATE_LIMIT
+QUARANTINE
+REVIEW
+CHALLENGE
+```
+
+Zaproponuj wspólny format wyniku kontroli, np.:
+
+```json
+{
+  "decision": "BLOCK",
+  "rule_id": "PI-001",
+  "reason": "Prompt injection detected",
+  "severity": "HIGH",
+  "confidence": 0.97,
+  "latency_ms": 4.2
+}
+```
+
+---
+
+# 19. Utwórz IMPLEMENTATION BACKLOG
+
+Utwórz:
+
+```text
+docs/deterministic/implementation-backlog.md
+```
+
+Tabela:
+
+| Priority | Control | Description | Dependencies | Complexity | Test Required | Status |
+| -------- | ------- | ----------- | ------------ | ---------- | ------------- | ------ |
+
+Ułóż kontrole w kolejności implementacji.
+
+Backlog ma być praktyczny i możliwy do wykorzystania później podczas developmentu.
+
+---
+
+# 20. Utwórz TEST CATALOG
+
+Utwórz:
+
+```text
+docs/deterministic/test-catalog.md
+```
+
+Dla każdego control przygotuj:
+
+* positive cases,
+* negative cases,
+* edge cases,
+* bypass attempts,
+* expected result.
+
+Przykład:
+
+```text
+PII-001
+
+Input:
+"My PESEL is ..."
+
+Expected:
+REDACT
+```
+
+---
+
+# 21. Utwórz SOURCES
+
+Utwórz:
+
+```text
+docs/deterministic/sources.md
+```
+
+Podziel źródła na:
+
+* OWASP
+* MITRE
+* NIST
+* CISA
+* CVE / advisories
+* vendor documentation
+* research papers
+* open-source projects
+
+Przy każdym źródle podaj:
+
+* nazwę,
+* link,
+* datę publikacji / aktualizacji, jeśli dostępna,
+* czego dotyczy,
+* które case'y wykorzystują to źródło.
+
+---
+
+# 22. ZASADY JAKOŚCI RESEARCHU
+
+Nie twórz dokumentacji „na podstawie ogólnej wiedzy”.
+
+Każdy ważny techniczny claim powinien mieć źródło.
+
+Rozróżniaj:
+
+* confirmed vulnerability,
+* real-world attack,
+* research finding,
+* proof of concept,
+* theoretical scenario,
+* mitigation recommendation.
+
+Nie przedstawiaj marketingowych claims jako obiektywnych faktów.
+
+Szukaj również:
+
+* bypassów,
+* false positives,
+* false negatives,
+* ograniczeń,
+* problemów wydajnościowych.
+
+Jeżeli rozwiązanie deterministyczne nie jest wystarczające, napisz to wprost.
+
+---
+
+# 23. NAJWAŻNIEJSZY CEL
+
+Nie chcę tylko listy security threats.
+
+Chcę stworzyć w repozytorium **praktyczny Security Control Catalog dla Deterministic / Non-AI Controls**, który później posłuży bezpośrednio do:
+
+1. zaprojektowania architektury,
+2. wyboru bibliotek,
+3. implementacji rules,
+4. napisania testów,
+5. zbudowania UI do zarządzania regułami.
+
+Każdy case powinien więc odpowiadać na pytanie:
+
+> **Czy i jak możemy zaimplementować ochronę przed tym problemem deterministycznie w naszym AI Control Layer?**
+
+---
+
+# 24. WAŻNE — NIE KOŃCZ NA JEDNYM PLIKU
+
+Pracuj iteracyjnie:
+
+```text
+research case #1
+→ utwórz Markdown
+
+research case #2
+→ utwórz Markdown
+
+research case #3
+→ utwórz Markdown
+
+...
+```
+
+Po każdym znalezionym istotnym przypadku aktualizuj:
+
+```text
+docs/deterministic/README.md
+```
+
+Nie czekaj z zapisaniem wszystkiego do końca.
+
+Jeżeli podczas researchu odkryjesz nowe istotne kategorie, **samodzielnie dodaj nowe case files**.
+
+Nie pytaj mnie o pozwolenie na utworzenie kolejnego pliku, jeżeli jest on uzasadniony wynikami researchu.
+
+---
+
+# 25. Na końcu
+
+Po zakończeniu pracy odpowiedz krótko:
+
+* ile case files utworzyłeś,
+* jakie główne kategorie znalazłeś,
+* które controls są MUST HAVE,
+* które wymagają semantic AI,
+* jakie open-source solutions są najbardziej interesujące,
+* jakie są najważniejsze wnioski architektoniczne.
+
+Nie kopiuj całej dokumentacji do odpowiedzi.
+
+**Cała szczegółowa analiza ma znajdować się w `docs/deterministic/`.**
