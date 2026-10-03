@@ -8,7 +8,9 @@ import type {
   AuditVerifyResult,
   ControlTrace,
   CurrentUser,
-  DashboardStats,
+  DashboardData,
+  DashboardWindow,
+  GuardAction,
   GuardedChatResponse,
   PolicyInfo,
   TextSpan,
@@ -219,27 +221,63 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
   )
 }
 
-export function stats(): Promise<DashboardStats> {
+/** Agregaty jak DashboardService.java, liczone z MOCK_AUDIT — spójne z ekranem audytu w trybie mock. */
+export function dashboard(window: DashboardWindow): Promise<DashboardData> {
+  const lengthMs = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000 }[window]
+  const bucketMs = { '1h': 300_000, '24h': 3_600_000, '7d': 21_600_000 }[window]
+  const to = Date.now()
+  const from = (Math.floor((to - lengthMs) / bucketMs) + 1) * bucketMs
+  const events = MOCK_AUDIT.filter((e) => Date.parse(e.timestamp) >= from)
+  const zero = () => ({ allow: 0, monitor: 0, redact: 0, require_approval: 0, block: 0 }) as Record<string, number>
+  const byAction = zero()
+  const buckets = new Map<number, Record<string, number>>()
+  for (let s = from; s < to; s += bucketMs) buckets.set(s, zero())
+  const controls = new Map<string, number>()
+  const models = new Map<string, { requests: number; blocked: number; tokens: number }>()
+  const principals = new Map<string, { role: string | null; requests: number; blocked: number; tokens: number }>()
+  const latencies: number[] = []
+  let prompt = 0
+  let completion = 0
+  for (const e of events) {
+    byAction[e.action]++
+    const b = buckets.get(Math.floor(Date.parse(e.timestamp) / bucketMs) * bucketMs)
+    if (b) b[e.action]++
+    const tokens = (e.usage?.promptTokens ?? 0) + (e.usage?.completionTokens ?? 0)
+    prompt += e.usage?.promptTokens ?? 0
+    completion += e.usage?.completionTokens ?? 0
+    if (e.action !== 'block') latencies.push(e.latencyMs)
+    for (const t of e.trace) if (t.action !== 'allow') controls.set(`${t.policy}|${t.action}`, (controls.get(`${t.policy}|${t.action}`) ?? 0) + 1)
+    const blocked = e.action === 'block' ? 1 : 0
+    if (e.model) {
+      const s = models.get(e.model) ?? { requests: 0, blocked: 0, tokens: 0 }
+      models.set(e.model, { requests: s.requests + 1, blocked: s.blocked + blocked, tokens: s.tokens + tokens })
+    }
+    if (e.principal) {
+      const s = principals.get(e.principal) ?? { role: e.role, requests: 0, blocked: 0, tokens: 0 }
+      principals.set(e.principal, { ...s, requests: s.requests + 1, blocked: s.blocked + blocked, tokens: s.tokens + tokens })
+    }
+  }
+  latencies.sort((a, b) => a - b)
+  const pct = (p: number) => (latencies.length ? latencies[Math.max(Math.ceil((p / 100) * latencies.length) - 1, 0)] : null)
   return delay({
-    totalRequests: 1284,
-    blocked: 97,
-    redacted: 143,
-    budgetUsedPct: 37,
-    latencyP50Ms: 58,
-    latencyP95Ms: 210,
-    hitsPerPolicy: [
-      { policy: 'pii.email', count: 64 },
-      { policy: 'pii.credit_card', count: 41 },
-      { policy: 'semantic.jailbreak', count: 55 },
-      { policy: 'deterministic.code_injection', count: 23 },
-      { policy: 'ssrf.denylist', count: 12 },
+    window,
+    from: new Date(from).toISOString(),
+    to: new Date(to).toISOString(),
+    truncated: false,
+    totals: { requests: events.length, byAction, errors: 0 },
+    latency: { p50: pct(50), p95: pct(95), max: latencies.at(-1) ?? null, samples: latencies.length },
+    tokens: { prompt, completion },
+    timeline: [...buckets].map(([start, counts]) => ({ start: new Date(start).toISOString(), byAction: counts })),
+    controls: [...controls]
+      .map(([key, count]) => ({ policy: key.split('|')[0], action: key.split('|')[1] as GuardAction, count }))
+      .sort((a, b) => b.count - a.count),
+    models: [...models].map(([model, s]) => ({ model, ...s })).sort((a, b) => b.requests - a.requests),
+    principals: [...principals].map(([principal, s]) => ({ principal, ...s })).sort((a, b) => b.requests - a.requests),
+    budgets: [
+      { role: 'admin', usedTokens: 0, reservedTokens: 0, cap: null },
+      { role: 'agent', usedTokens: 12_400, reservedTokens: 0, cap: 100_000 },
+      { role: 'chat', usedTokens: 17_300, reservedTokens: 1_100, cap: 20_000 },
     ],
-    timeline: Array.from({ length: 12 }, (_, i) => ({
-      time: `${String(8 + i).padStart(2, '0')}:00`,
-      allow: 60 + ((i * 17) % 40),
-      redact: 5 + ((i * 7) % 15),
-      block: 3 + ((i * 5) % 12),
-    })),
   })
 }
 

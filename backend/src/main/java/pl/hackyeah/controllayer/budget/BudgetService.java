@@ -116,4 +116,22 @@ public class BudgetService {
     private static String subjectOf(String role) {
         return "role:" + role;
     }
+
+    /** Dzisiejsze zużycie per rola (do dashboardu). Blokujące — wołać poza event loopem. */
+    public Map<String, RoleUsage> todayUsageByRole() {
+        var usage = new java.util.TreeMap<String, RoleUsage>();
+        jdbcTemplate.query(
+                "SELECT subject, used_tokens, reserved FROM budget_counter WHERE period_kind = ? AND period_start = ?",
+                rs -> {
+                    String subject = rs.getString("subject");
+                    if (subject.startsWith("role:")) {
+                        usage.put(subject.substring("role:".length()),
+                                new RoleUsage(rs.getLong("used_tokens"), rs.getLong("reserved")));
+                    }
+                },
+                PERIOD_KIND, LocalDate.now());
+        return usage;
+    }
+
+    public record RoleUsage(long usedTokens, long reservedTokens) {}
 }

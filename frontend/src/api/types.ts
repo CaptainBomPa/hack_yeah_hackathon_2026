@@ -126,15 +126,25 @@ export interface AuditVerifyResult {
   reason: string | null
 }
 
-export interface DashboardStats {
-  totalRequests: number
-  blocked: number
-  redacted: number
-  budgetUsedPct: number
-  latencyP50Ms: number
-  latencyP95Ms: number
-  hitsPerPolicy: { policy: string; count: number }[]
-  timeline: { time: string; allow: number; redact: number; block: number }[]
+/** GET /api/dashboard — DashboardView.java. Liczone z audytu w oknie czasowym; budżety z budget_counter + policy.yaml. */
+export type DashboardWindow = '1h' | '24h' | '7d'
+
+export interface DashboardData {
+  window: DashboardWindow
+  from: string
+  to: string
+  /** true = w oknie było więcej rekordów niż limit agregacji; liczby są dolną granicą. */
+  truncated: boolean
+  totals: { requests: number; byAction: Record<string, number>; errors: number }
+  /** Czas odpowiedzi żądań, które doszły do modelu (allow/monitor/redact). null = brak próbek. */
+  latency: { p50: number | null; p95: number | null; max: number | null; samples: number }
+  tokens: { prompt: number; completion: number }
+  timeline: { start: string; byAction: Record<string, number> }[]
+  controls: { policy: string; action: GuardAction; count: number }[]
+  models: { model: string; requests: number; blocked: number; tokens: number }[]
+  principals: { principal: string; role: string | null; requests: number; blocked: number; tokens: number }[]
+  /** cap null = rola bez dziennego limitu. */
+  budgets: { role: string; usedTokens: number; reservedTokens: number; cap: number | null }[]
 }
 
 export interface PolicyInfo {

@@ -6,7 +6,8 @@ import type {
   AuditVerifyResult,
   ChatMessage,
   CurrentUser,
-  DashboardStats,
+  DashboardData,
+  DashboardWindow,
   GuardedChatResponse,
   ModelOption,
   PolicyInfo,
@@ -21,7 +22,7 @@ export type Feature = 'auth' | 'chat' | 'models' | 'stats' | 'audit' | 'policy'
  * Funkcje, które backend już implementuje — wołają żywy gateway mimo VITE_USE_MOCKS=true.
  * Dopisywać tu kolejne, gdy powstaną ich endpointy. VITE_LIVE_FEATURES nadpisuje tę listę.
  */
-const IMPLEMENTED_IN_BACKEND: Feature[] = ['auth', 'chat', 'audit']
+const IMPLEMENTED_IN_BACKEND: Feature[] = ['auth', 'chat', 'audit', 'stats']
 
 const LIVE_FEATURES = new Set(
   import.meta.env.VITE_LIVE_FEATURES !== undefined
@@ -196,9 +197,10 @@ export const api = {
       .filter(Boolean)
     return tags.map((tag) => ({ tag, provider: 'ollama', enabled: true }))
   },
-  stats(): Promise<DashboardStats> {
-    if (isMocked('stats')) return mocks.stats()
-    return request('/api/stats')
+  /** GET /api/dashboard — metryki z audytu w oknie czasowym. */
+  dashboard(window: DashboardWindow): Promise<DashboardData> {
+    if (isMocked('stats')) return mocks.dashboard(window)
+    return request(`/api/dashboard?window=${window}`)
   },
   /** GET /api/audit/events — najnowsze pierwsze; `before` = `nextCursor` z poprzedniej strony. */
   auditEvents(filters: AuditFilters = {}, before?: number | null): Promise<AuditPage> {

@@ -1,7 +1,9 @@
 package pl.hackyeah.controllayer.audit;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +13,9 @@ public interface AuditEventRepository extends JpaRepository<AuditEvent, Long>, J
     Optional<AuditEvent> findTopByOrderBySeqDesc();
 
     Optional<AuditEvent> findByRequestId(String requestId);
+
+    /** Rekordy z okna czasowego do agregacji dashboardu (najnowsze pierwsze, z limitem). */
+    List<AuditEvent> findByOccurredAtGreaterThanEqual(Instant from, Pageable pageable);
 
     // Wartości do list filtrów (GET /api/audit/facets).
 

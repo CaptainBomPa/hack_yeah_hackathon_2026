@@ -247,7 +247,9 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
   HMAC (wykrywanie modyfikacji, `GET /api/audit/verify`); zapis przed odpowiedzią, fail-closed
   (503) przy awarii; API `/api/audit/**` (rola ADMIN) i ekran Audit log we frontendzie;
   na Postgresie dodatkowo trigger append-only (zob. `docs/deterministic/27-audit-logging.md`);
-- `frontend/` — Playground (czat + X-ray) i Audit log podłączone do backendu; reszta widoków na mockach;
+- dashboard: **działa e2e** — `GET /api/dashboard?window=1h|24h|7d` liczy metryki z `audit_event` (akcje, 5xx,
+  latencja p50/p95, tokeny, oś czasu, top kontroli, per model/użytkownik) + budżety ról z `budget_counter`;
+- `frontend/` — Playground (czat + X-ray), Audit log i Dashboard podłączone do backendu; Polityki i Session graph jeszcze nie;
 - provider analizy semantycznej ani opcjonalny lokalny sidecar nie mają jeszcze implementacji;
 - `docker-compose.yml` — docelowo wdrażany w całości na Raspberry Pi: baza, backend i Ollama
   żyją w jednej sieci docker na tym samym hoście (backend łączy się z Ollamą przez nazwę
