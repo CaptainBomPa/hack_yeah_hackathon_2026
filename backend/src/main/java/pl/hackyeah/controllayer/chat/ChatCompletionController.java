@@ -3,11 +3,16 @@ package pl.hackyeah.controllayer.chat;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,6 +26,7 @@ import pl.hackyeah.controllayer.guard.GuardContext;
 import pl.hackyeah.controllayer.guard.Stage;
 import pl.hackyeah.controllayer.model.ModelCatalog;
 import pl.hackyeah.controllayer.model.ModelCatalogProperties;
+import pl.hackyeah.controllayer.policy.ModelAccessPolicy;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -37,14 +43,19 @@ public class ChatCompletionController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatCompletionController.class);
     private static final String MODEL_ALLOWLIST_POLICY = "model.allowlist";
+    private static final String MODEL_ACCESS_POLICY = "policy.model-access";
+    private static final String AUTH_POLICY = "auth.required";
+    private static final String ROLE_PREFIX = "ROLE_";
 
     private final ModelCatalog modelCatalog;
+    private final ModelAccessPolicy modelAccessPolicy;
     private final OllamaChatClient upstreamClient;
     private final GuardChain guardChain;
 
-    public ChatCompletionController(
-            ModelCatalog modelCatalog, OllamaChatClient upstreamClient, GuardChain guardChain) {
+    public ChatCompletionController(ModelCatalog modelCatalog, ModelAccessPolicy modelAccessPolicy,
+            OllamaChatClient upstreamClient, GuardChain guardChain) {
         this.modelCatalog = modelCatalog;
+        this.modelAccessPolicy = modelAccessPolicy;
         this.upstreamClient = upstreamClient;
         this.guardChain = guardChain;
     }
@@ -55,6 +66,14 @@ public class ChatCompletionController {
         String requestId = UUID.randomUUID().toString();
         long startedAt = System.nanoTime();
 
+        return ReactiveSecurityContextHolder.getContext()
+                .flatMap(context -> Mono.justOrEmpty(callerOf(context.getAuthentication())))
+                .flatMap(caller -> complete(request, caller, requestId, startedAt))
+                .switchIfEmpty(Mono.fromSupplier(() -> unauthenticated(requestId)));
+    }
+
+    private Mono<ResponseEntity<GuardedChatResponse>> complete(ChatCompletionRequest request, Caller caller,
+            String requestId, long startedAt) {
         var allowedModel = modelCatalog.resolveAllowed(request.model());
         if (allowedModel.isEmpty()) {
             log.info("requestId={} model={} action=block reason=not-allowed", requestId, request.model());
@@ -66,6 +85,19 @@ public class ChatCompletionController {
                     "model not allowed: " + request.model()));
             return Mono.just(ResponseEntity.status(403)
                     .body(GuardedChatResponse.block(requestId, MODEL_ALLOWLIST_POLICY, trace)));
+        }
+
+        if (!modelAccessPolicy.allowsModel(caller.role(), request.model())) {
+            log.info("requestId={} caller={} role={} model={} action=block reason=policy",
+                    requestId, caller.login(), caller.role(), request.model());
+            var policyTrace = List.of(new ControlTrace(
+                    MODEL_ACCESS_POLICY,
+                    "deterministic",
+                    "block",
+                    elapsedMillis(startedAt),
+                    "role " + caller.role() + " may not use model " + request.model()));
+            return Mono.just(ResponseEntity.status(403)
+                    .body(GuardedChatResponse.block(requestId, MODEL_ACCESS_POLICY, policyTrace)));
         }
 
         ModelCatalogProperties.ModelEntry model = allowedModel.get();
@@ -103,6 +135,29 @@ public class ChatCompletionController {
                     return Mono.just(ResponseEntity.status(502)
                             .body(GuardedChatResponse.block(requestId, "upstream-error", trace)));
                 });
+    }
+
+    private static ResponseEntity<GuardedChatResponse> unauthenticated(String requestId) {
+        var trace = List.of(new ControlTrace(
+                AUTH_POLICY, "deterministic", "block", 0, "no authenticated caller with a role"));
+        return ResponseEntity.status(401)
+                .body(GuardedChatResponse.block(requestId, AUTH_POLICY, trace));
+    }
+
+    /** Wywołujący po uwierzytelnieniu: login do logów i rola do polityki. */
+    private record Caller(String login, String role) {
+    }
+
+    private static Optional<Caller> callerOf(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return Optional.empty();
+        }
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(authority -> authority.startsWith(ROLE_PREFIX))
+                .map(authority -> authority.substring(ROLE_PREFIX.length()).toLowerCase(Locale.ROOT))
+                .findFirst()
+                .map(role -> new Caller(authentication.getName(), role));
     }
 
     /** Guardy INPUT dla każdej wiadomości (historia też może zawierać dane wrażliwe). */
