@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { USE_MOCKS } from '../api/client'
+import { isMocked, USE_MOCKS } from '../api/client'
 
 const NAV = [
   { to: '/playground', label: 'Playground' },
@@ -28,7 +28,10 @@ export default function Layout() {
           ))}
         </nav>
         {USE_MOCKS && (
-          <p className="mt-6 rounded bg-amber-900/40 px-2 py-1 text-xs text-amber-300">Tryb mock — bez gatewaya</p>
+          <p className="mt-6 rounded bg-amber-900/40 px-2 py-1 text-xs text-amber-300">
+            Mocki włączone
+            {!isMocked('chat') && <span className="block text-emerald-300">czat: live gateway</span>}
+          </p>
         )}
       </aside>
       <main className="flex-1 overflow-auto p-6">

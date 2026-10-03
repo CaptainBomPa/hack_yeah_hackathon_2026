@@ -1,40 +1,151 @@
-import type { AuditEvent, ChatMessage, DashboardStats, GuardedChatResponse, PolicyInfo } from './types'
+import type {
+  AuditEvent,
+  ChatMessage,
+  DashboardStats,
+  GuardedChatResponse,
+  ModelOption,
+  PolicyInfo,
+} from './types'
 import * as mocks from './mocks'
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true'
+
+export type Feature = 'chat' | 'models' | 'stats' | 'audit' | 'policy'
+
+/**
+ * Funkcje, które backend już implementuje — wołają żywy gateway mimo VITE_USE_MOCKS=true.
+ * Dopisywać tu kolejne, gdy powstaną ich endpointy. VITE_LIVE_FEATURES nadpisuje tę listę.
+ */
+const IMPLEMENTED_IN_BACKEND: Feature[] = ['chat']
+
+const LIVE_FEATURES = new Set(
+  import.meta.env.VITE_LIVE_FEATURES !== undefined
+    ? import.meta.env.VITE_LIVE_FEATURES.split(',')
+        .map((f) => f.trim())
+        .filter(Boolean)
+    : IMPLEMENTED_IN_BACKEND,
+)
+
+/** Czy dana funkcja ma używać mocków (VITE_USE_MOCKS=true minus funkcje działające w backendzie). */
+export function isMocked(feature: Feature): boolean {
+  return USE_MOCKS && !LIVE_FEATURES.has(feature)
+}
+
+const DEFAULT_MODELS = 'qwen2.5:1.5b-instruct-q4_K_M,qwen2.5:0.5b'
+
+/** Gateway nie odpowiedział własnym kontraktem (wyłączony, proxy padło, nieoczekiwany błąd). */
+export class GatewayUnavailableError extends Error {
+  constructor(readonly status: number | null, detail: string) {
+    super(detail)
+    this.name = 'GatewayUnavailableError'
+  }
+}
+
+/** Brak sesji/poświadczeń: 401 z gatewaya (docs/auth). */
+export class AuthRequiredError extends Error {
+  constructor() {
+    super('Wymagane zalogowanie')
+    this.name = 'AuthRequiredError'
+  }
+}
+
+function isGuardedChatResponse(body: unknown): body is GuardedChatResponse {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    typeof (body as GuardedChatResponse).requestId === 'string' &&
+    typeof (body as GuardedChatResponse).action === 'string' &&
+    Array.isArray((body as GuardedChatResponse).trace)
+  )
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
+  if (res.status === 401) throw new AuthRequiredError()
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`)
   return res.json() as Promise<T>
 }
 
-// TODO: ścieżki /api/* to propozycja — dopasować do endpointów gatewaya, gdy powstaną.
+export interface ChatParams {
+  model: string
+  messages: ChatMessage[]
+  sessionId?: string
+  signal?: AbortSignal
+}
+
+/**
+ * POST /v1/chat/completions. Gateway zwraca GuardedChatResponse także dla 400/403/502,
+ * więc to jest decyzja do pokazania, a nie wyjątek. Wyjątek leci tylko, gdy odpowiedź
+ * nie jest naszym kontraktem (gateway wyłączony) albo brak sesji (401).
+ */
+async function chatLive({ model, messages, sessionId, signal }: ChatParams): Promise<GuardedChatResponse> {
+  let res: Response
+  try {
+    res = await fetch('/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(sessionId ? { 'X-Session-Id': sessionId } : {}),
+      },
+      body: JSON.stringify({ model, messages }),
+      signal,
+    })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err
+    throw new GatewayUnavailableError(null, 'Brak połączenia z gatewayem')
+  }
+
+  if (res.status === 401) throw new AuthRequiredError()
+
+  const text = await res.text()
+  let body: unknown = null
+  try {
+    body = text ? JSON.parse(text) : null
+  } catch {
+    // nie-JSON, np. strona błędu proxy
+  }
+  if (isGuardedChatResponse(body)) return body
+
+  throw new GatewayUnavailableError(
+    res.status,
+    `Gateway odpowiedział HTTP ${res.status} spoza kontraktu${text ? `: ${text.slice(0, 200)}` : ''}`,
+  )
+}
+
+// TODO: ścieżki /api/* to propozycja z docs/frontend-flows-and-api.md — dopasować, gdy powstaną.
 export const api = {
-  chat(messages: ChatMessage[], model = 'qwen2.5:0.5b'): Promise<GuardedChatResponse> {
-    if (USE_MOCKS) return mocks.chat(messages)
-    return request('/v1/chat/completions', { method: 'POST', body: JSON.stringify({ model, messages }) })
+  chat(params: ChatParams): Promise<GuardedChatResponse> {
+    if (isMocked('chat')) return mocks.chat(params)
+    return chatLive(params)
+  },
+  /** Do czasu GET /api/models lista pochodzi z VITE_MODELS (tagi z backend application.yml). */
+  async models(): Promise<ModelOption[]> {
+    const tags = (import.meta.env.VITE_MODELS ?? DEFAULT_MODELS)
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
+    return tags.map((tag) => ({ tag, provider: 'ollama', enabled: true }))
   },
   stats(): Promise<DashboardStats> {
-    if (USE_MOCKS) return mocks.stats()
+    if (isMocked('stats')) return mocks.stats()
     return request('/api/stats')
   },
   auditEvents(): Promise<AuditEvent[]> {
-    if (USE_MOCKS) return mocks.auditEvents()
+    if (isMocked('audit')) return mocks.auditEvents()
     return request('/api/audit')
   },
   auditExportUrl(format: 'csv' | 'json'): string {
     return `/api/audit/export?format=${format}`
   },
   policy(): Promise<PolicyInfo> {
-    if (USE_MOCKS) return mocks.policy()
+    if (isMocked('policy')) return mocks.policy()
     return request('/api/policy')
   },
   updatePolicy(raw: string): Promise<PolicyInfo> {
-    if (USE_MOCKS) return mocks.policy(raw)
+    if (isMocked('policy')) return mocks.policy(raw)
     return request('/api/policy', { method: 'PUT', body: JSON.stringify({ raw }) })
   },
 }

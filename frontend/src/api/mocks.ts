@@ -1,44 +1,208 @@
-import type { AuditEvent, ChatMessage, DashboardStats, GuardedChatResponse, PolicyInfo } from './types'
+import type { ChatParams } from './client'
+import { newId } from '../lib/id'
+import type {
+  AuditEvent,
+  ControlTrace,
+  DashboardStats,
+  GuardedChatResponse,
+  PolicyInfo,
+  TextSpan,
+} from './types'
 
 const delay = <T,>(value: T, ms = 300) => new Promise<T>((r) => setTimeout(() => r(value), ms))
 
-export function chat(messages: ChatMessage[]): Promise<GuardedChatResponse> {
-  const last = messages[messages.length - 1]?.content ?? ''
-  const requestId = crypto.randomUUID()
-
-  if (/ignore (all )?previous instructions/i.test(last)) {
-    return delay({
-      requestId,
-      action: 'block',
-      blockedBy: 'semantic.jailbreak',
-      trace: [
-        { policy: 'pii.detect', kind: 'deterministic', action: 'allow', latencyMs: 1 },
-        { policy: 'semantic.jailbreak', kind: 'semantic', action: 'block', latencyMs: 42, detail: 'score 0.97' },
-      ],
+function abortableDelay<T>(value: T, ms: number, signal?: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(value), ms)
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer)
+      reject(new DOMException('Aborted', 'AbortError'))
     })
-  }
-  if (/\b(?:\d[ -]?){13,16}\b/.test(last)) {
-    return delay({
-      requestId,
-      action: 'redact',
-      message: { role: 'assistant', content: 'Nie podawaj numeru karty [REDACTED] w czacie.' },
-      trace: [
-        { policy: 'pii.credit_card', kind: 'deterministic', action: 'redact', latencyMs: 1, detail: 'Luhn OK' },
-        { policy: 'semantic.jailbreak', kind: 'semantic', action: 'allow', latencyMs: 38 },
-      ],
-      usage: { promptTokens: 18, completionTokens: 12 },
-    })
-  }
-  return delay({
-    requestId,
-    action: 'allow',
-    message: { role: 'assistant', content: `(mock) Odpowiedź modelu na: "${last}"` },
-    trace: [
-      { policy: 'pii.detect', kind: 'deterministic', action: 'allow', latencyMs: 1 },
-      { policy: 'semantic.jailbreak', kind: 'semantic', action: 'allow', latencyMs: 40 },
-    ],
-    usage: { promptTokens: 12, completionTokens: 24 },
   })
+}
+
+const MOCK_MODELS = ['qwen2.5:1.5b-instruct-q4_K_M', 'qwen2.5:0.5b']
+const POLICY = { policyVersion: 'v3', policyHash: 'a1b2c3d' }
+
+function spansOf(text: string, re: RegExp, label: string): TextSpan[] {
+  return [...text.matchAll(new RegExp(re, 'g'))].map((m) => ({
+    start: m.index ?? 0,
+    end: (m.index ?? 0) + m[0].length,
+    label,
+  }))
+}
+
+/** Odwzorowuje ChatCompletionController.java + rozszerzenia trace z kontraktu §5.1. */
+export function chat({ model, messages, signal }: ChatParams): Promise<GuardedChatResponse> {
+  const last = messages[messages.length - 1]?.content ?? ''
+  const requestId = newId()
+  const allowlist: ControlTrace = {
+    policy: 'model.allowlist',
+    kind: 'deterministic',
+    stage: 'input',
+    mode: 'block',
+    action: 'allow',
+    latencyMs: 1,
+    detail: null,
+    status: 'ok',
+  }
+
+  if (!MOCK_MODELS.includes(model)) {
+    return abortableDelay(
+      {
+        requestId,
+        action: 'block',
+        message: null,
+        blockedBy: 'model.allowlist',
+        trace: [{ ...allowlist, action: 'block', detail: `model not allowed: ${model}` }],
+        usage: null,
+        ...POLICY,
+      },
+      150,
+      signal,
+    )
+  }
+
+  const pii: ControlTrace = {
+    policy: 'pii.detect',
+    kind: 'deterministic',
+    stage: 'input',
+    mode: 'redact',
+    action: 'allow',
+    latencyMs: 2,
+    detail: null,
+    status: 'ok',
+  }
+  const semantic: ControlTrace = {
+    policy: 'semantic.injection',
+    kind: 'semantic',
+    stage: 'input',
+    mode: 'block',
+    action: 'allow',
+    latencyMs: 44,
+    detail: null,
+    confidence: 0.04,
+    threshold: 0.8,
+    status: 'ok',
+    provider: 'mock-local',
+  }
+
+  if (/ignore (all )?previous instructions|zignoruj (wszystkie )?poprzednie/i.test(last)) {
+    const spans = spansOf(last, /ignore (all )?previous instructions|zignoruj (wszystkie )?poprzednie/i, 'INJECTION')
+    return abortableDelay(
+      {
+        requestId,
+        action: 'block',
+        message: null,
+        blockedBy: 'semantic.injection',
+        trace: [
+          allowlist,
+          pii,
+          { ...semantic, action: 'block', confidence: 0.97, detail: 'instruction override attempt', spans },
+        ],
+        usage: null,
+        ...POLICY,
+        status: 'ok',
+        latency: { totalMs: 52 },
+      },
+      400,
+      signal,
+    )
+  }
+
+  const pesel = spansOf(last, /\b\d{11}\b/, 'PII:PESEL')
+  if (pesel.length > 0) {
+    return abortableDelay(
+      {
+        requestId,
+        action: 'redact',
+        blockedBy: null,
+        message: {
+          role: 'assistant',
+          content: 'Widzę numer [REDACTED:PII:PESEL]. Nie przekazuj takich danych w czacie.',
+        },
+        trace: [
+          allowlist,
+          { ...pii, action: 'redact', detail: `${pesel.length} × PESEL (suma kontrolna OK)`, spans: pesel },
+          semantic,
+          { ...pii, policy: 'pii.output', stage: 'output', latencyMs: 1 },
+        ],
+        usage: { promptTokens: 22, completionTokens: 18 },
+        ...POLICY,
+        status: 'ok',
+        latency: { totalMs: 1630, upstreamMs: 1570 },
+      },
+      1600,
+      signal,
+    )
+  }
+
+  if (/system prompt|jailbreak|DAN/i.test(last)) {
+    return abortableDelay(
+      {
+        requestId,
+        action: 'monitor',
+        blockedBy: null,
+        message: { role: 'assistant', content: '(mock) Nie mogę ujawnić instrukcji systemowych.' },
+        trace: [
+          allowlist,
+          pii,
+          { ...semantic, mode: 'monitor', action: 'monitor', confidence: 0.86, detail: 'possible jailbreak (monitor only)' },
+        ],
+        usage: { promptTokens: 15, completionTokens: 11 },
+        ...POLICY,
+        status: 'ok',
+        latency: { totalMs: 1420, upstreamMs: 1360 },
+      },
+      1400,
+      signal,
+    )
+  }
+
+  if (/timeout|awaria/i.test(last)) {
+    return abortableDelay(
+      {
+        requestId,
+        action: 'block',
+        message: null,
+        blockedBy: 'semantic.injection',
+        trace: [
+          allowlist,
+          pii,
+          {
+            ...semantic,
+            action: 'block',
+            confidence: undefined,
+            latencyMs: 2000,
+            status: 'error',
+            detail: 'provider timeout after 2000 ms (fail-closed)',
+          },
+        ],
+        usage: null,
+        ...POLICY,
+        status: 'degraded',
+        latency: { totalMs: 2004 },
+      },
+      2000,
+      signal,
+    )
+  }
+
+  return abortableDelay(
+    {
+      requestId,
+      action: 'allow',
+      blockedBy: null,
+      message: { role: 'assistant', content: `(mock) Odpowiedź modelu ${model} na: "${last}"` },
+      trace: [allowlist, pii, semantic, { ...pii, policy: 'pii.output', stage: 'output', latencyMs: 1 }],
+      usage: { promptTokens: 12, completionTokens: 24 },
+      ...POLICY,
+      status: 'ok',
+      latency: { totalMs: 1290, upstreamMs: 1240 },
+    },
+    1300,
+    signal,
+  )
 }
 
 export function stats(): Promise<DashboardStats> {

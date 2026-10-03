@@ -175,6 +175,13 @@ Gateway — wybór providera zależy od treści body, a odpowiedź wymaga przeks
 kontraktu, co w kontrolerze jest prostsze i mniej ryzykowne niż ręczne przepisywanie URI/body na
 poziomie filtrów Gateway. Inne route'y (np. do sidecara) mogą nadal być deklaratywne.
 
+**Dostęp do dashboardu (`/api/**` i UI) wymaga zalogowania**: OAuth2/OIDC obsługiwane w gatewayu
+(Spring Security `oauth2Login`, wzorzec BFF). Przeglądarka dostaje tylko ciasteczko sesji `HttpOnly`
+i token CSRF, tokeny IdP nie trafiają do JS. IdP wymienny w configu (Google; do decyzji Keycloak w
+compose jako offline default). W MVP każdy zalogowany ma pełny dostęp; role `viewer`/`admin` są
+rozszerzeniem. Logowanie ludzi nie dotyczy `/v1/*`. Kontrakt dashboardu i przepływy frontu:
+[`docs/frontend-flows-and-api.md`](docs/frontend-flows-and-api.md).
+
 Gateway działa na porcie `8000`, frontend na `3000`. Opcjonalny lokalny sidecar może działać
 na `8001`; zewnętrzny provider jest konfigurowany adresem i poświadczeniami środowiskowymi.
 
