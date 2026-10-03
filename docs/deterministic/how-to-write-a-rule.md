@@ -92,5 +92,32 @@ dodaje się nowy wariant do `Verdict` i obsługę w `GuardChain`; istniejące gu
 
 ## 8. Powiązane
 
-[decision-model.md](decision-model.md) (semantyka decyzji) · [architecture.md](architecture.md) (pipeline) ·
-[rule-model.md](rule-model.md) (docelowy model danych reguły – dziś zaimplementowana jest jego uproszczona wersja: klasa + `enabled/order/params`).
+[decision-model.md](decision-model.md) (semantyka decyzji, w tym te jeszcze niezaimplementowane).
+
+## 9. Pipeline i zasady
+
+Docelowa kolejność przetwarzania żądania:
+
+1. limity na wejściu (body size, odrzucenie `Content-Encoding`, timeout, bulkhead – LIMIT),
+2. kanonikalizacja (strict UTF-8, NFKC, Unicode Tags/zero-width/bidi – CANON),
+3. uwierzytelnienie (AUTHN),
+4. policy (model/narzędzia/tenant – AUTHZ, TENANT),
+5. guardy `INPUT`,
+6. model,
+7. guardy `OUTPUT` (streaming z hold-backiem).
+
+Wywołania narzędzi/MCP i stan sesji to osobna ścieżka (`TOOL_CALL`): schema, ścieżki, URL, komendy, integralność definicji, sekwencje.
+
+Zasady projektowe:
+
+- **Canonicalize first** – regexy działają na widokach po kanonikalizacji; bez niej char-injection obchodzi guardraile (arXiv 2504.11168).
+- **Allowlist > denylist** (komendy, rejestry, narzędzia MCP).
+- **Deny-by-default i deny-overrides** – nieznane narzędzie traktuj jak egress.
+- **Fail-closed** dla reguł bezpieczeństwa i kosztów.
+- **Sidecar semantyczny = sygnał**, nie bramka; twarda decyzja jest deterministyczna.
+- **Audit bez surowych danych** – HMAC z kluczem serwera, nie gołe SHA-256 (przestrzeń PESEL jest mała).
+- **Streaming:** hold-back buffer ≥ najdłuższy wzorzec CRITICAL; wysłanego tekstu nie cofniesz.
+- **Cel:** <10 ms p95 dla ścieżki deterministycznej poza streamingiem.
+
+Co jeszcze nie jest zaimplementowane: `scope` reguł, `mode: monitor/shadow`, `exceptions`, `on_error` per reguła,
+hot-reload konfiguracji, decyzje `RATE_LIMIT` / `QUARANTINE`.

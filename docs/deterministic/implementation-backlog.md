@@ -5,7 +5,7 @@ Status: `TODO` (wszystko w momencie powstania dokumentu; `backend/` jest pusty).
 
 | Priority | Control | Description | Dependencies | Complexity | Test Required | Status |
 |---|---|---|---|---|---|---|
-| P0-1 | Szkielet engine: `RuleSnapshot`, loader YAML, hot reload, `Decision` model | Rule model + decision model, deny-overrides, `mode: monitor`, walidacja przy ładowaniu | rule-model.md, decision-model.md | M | Tak (unit + reload) | TODO |
+| P0-1 | Szkielet `Guard`/`GuardChain` + konfiguracja YAML (`enabled/order/params`) | Interfejs `Guard`, `Verdict` (Allow/Redact/Block), łańcuch INPUT/OUTPUT, walidacja kluczy przy starcie. Hot reload, `mode: monitor`, RATE_LIMIT/QUARANTINE – później | decision-model.md | M | Tak (unit) | DONE |
 | P0-2 | Audit log (AUDIT) | Tabela append-only, HMAC fragmentów, trace/policy_version; eksport CSV/JSON | P0-1, Postgres | M | AUDIT-T* | TODO |
 | P0-3 | AuthN (AUTHN-001..004) | API key (hash), JWT (alg allowlist, aud/iss), strip nagłówków tożsamości | P0-1 | M | AUTHN-T* | TODO |
 | P0-4 | Canonicalization (CANON-001..005) | Strict UTF-8, NFKC, Tags/zero-width/bidi, bounded decode → widoki | P0-1 | M | CANON-T* | TODO |

@@ -3,6 +3,7 @@
 Katalog kontroli deterministycznych (bez AI) dla AI Control Layer: LLM, agenci, MCP. Każdy case to osobny plik
 o wspólnej strukturze (15 sekcji: problem, atak, dowody z realnych CVE/incydentów, detekcja, pipeline, akcje,
 obejścia, granica AI, implementacja, open source, propozycja, YAML, przykłady, testy, źródła).
+Sekcja 12 w case files to szkic reguły; wdrożenie = klasa `Guard` wg [poradnika](how-to-write-a-rule.md).
 Kontekst projektu: [`VISION.md`](../../VISION.md) (§4A to pierwotna lista kontroli deterministycznych).
 
 > Uwaga o jakości: research wykonano przez agentów z dostępem do internetu; w każdym pliku rzeczy nieweryfikowane
@@ -13,10 +14,8 @@ Kontekst projektu: [`VISION.md`](../../VISION.md) (§4A to pierwotna lista kontr
 
 | Dokument | Zawartość |
 |---|---|
-| [architecture.md](architecture.md) | Architektura deterministic engine (pipeline, stan, budżety, hot reload, audit) |
-| [rule-model.md](rule-model.md) | Uniwersalny model reguły (YAML) + przykłady per kategoria |
 | [decision-model.md](decision-model.md) | Model decyzji (ALLOW/REDACT/BLOCK + RATE_LIMIT/QUARANTINE/REVIEW/CHALLENGE), format wyniku |
-| [how-to-write-a-rule.md](how-to-write-a-rule.md) | Jak dopisać regułę: interfejs `Guard`, `Verdict`, włączanie w YAML, checklista |
+| [how-to-write-a-rule.md](how-to-write-a-rule.md) | Jak dopisać regułę: interfejs `Guard`, `Verdict`, włączanie w YAML, checklista, pipeline i zasady |
 | [implementation-backlog.md](implementation-backlog.md) | Kolejność implementacji |
 | [test-catalog.md](test-catalog.md) | Katalog testów: positive/negative/edge/bypass |
 | [sources.md](sources.md) | Rejestr źródeł (OWASP, MITRE, NIST, CISA, CVE, vendor, papers, OSS) |
