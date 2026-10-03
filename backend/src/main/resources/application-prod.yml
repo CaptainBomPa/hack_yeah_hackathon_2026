@@ -1,0 +1,15 @@
+# Profil produkcyjny: PostgreSQL, schemat zarządzany wyłącznie przez Flyway (db/migration).
+# Hibernate tylko waliduje zgodność encji ze schematem.
+# Domyślne wartości pasują do usługi `db` z docker-compose.yml; nadpisywane przez SPRING_DATASOURCE_*.
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/hackyeah
+    username: hackyeah
+    password: hackyeah
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration

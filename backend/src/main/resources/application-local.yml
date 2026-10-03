@@ -1,0 +1,18 @@
+# Profil lokalny: H2 in-memory, schemat generowany przez Hibernate na starcie.
+# Nie wymaga Dockera ani Postgresa; dane znikają po restarcie.
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:controllayer;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+  flyway:
+    enabled: false
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG

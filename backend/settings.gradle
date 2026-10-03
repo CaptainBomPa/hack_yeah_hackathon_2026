@@ -1,0 +1,6 @@
+plugins {
+	// Pozwala Gradle samemu pobrać JDK z toolchaina (Java 25), jeśli nie ma go lokalnie.
+	id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+rootProject.name = 'control-layer'

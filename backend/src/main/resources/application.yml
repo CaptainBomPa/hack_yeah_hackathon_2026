@@ -1,0 +1,39 @@
+# Konfiguracja wspólna dla wszystkich profili.
+# Profile: `local` (H2 in-memory, schemat z Hibernate) i `prod` (PostgreSQL, schemat z Flyway).
+# Bez jawnie ustawionego profilu startuje `local`.
+
+server:
+  port: 8000
+
+spring:
+  application:
+    name: control-layer
+  profiles:
+    default: local
+  jpa:
+    open-in-view: false
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            # Passthrough do Ollamy na Raspberry Pi — na razie bez filtrów kontrolnych (VISION.md §4).
+            - id: ollama
+              uri: ${control-layer.ollama.base-url}
+              predicates:
+                - Path=/llm/**
+              filters:
+                - StripPrefix=1
+
+control-layer:
+  ollama:
+    base-url: ${OLLAMA_BASE_URL:http://raspberrypi.local:11434}
+  sidecar:
+    # Sidecar semantyczny (Python/FastAPI) — jeszcze nie istnieje.
+    base-url: ${SIDECAR_BASE_URL:http://localhost:8001}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

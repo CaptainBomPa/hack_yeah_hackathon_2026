@@ -12,7 +12,7 @@ nadrzędnym wobec naszych opisów rozwiązania, jest
 ## Struktura repo
 
 - [`VISION.md`](VISION.md) — architektura, stack, katalog kontroli, plan testów (czytaj to najpierw)
-- [`backend/`](backend/) — Java 21 + Spring Boot 3 / Spring Cloud Gateway (placeholder)
+- [`backend/`](backend/) — Java 25 + Spring Boot 4 / Spring Cloud Gateway (szkielet, zob. backend/README.md)
 - [`frontend/`](frontend/) — React + TypeScript + Tailwind (placeholder)
 - [`docker-compose.yml`](docker-compose.yml) — Postgres + backend + frontend (+ sidecar semantyczny, do dodania)
 - [`CLAUDE.md`](CLAUDE.md) — instrukcje dla Claude (Claude Code i inne narzędzia)

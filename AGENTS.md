@@ -17,15 +17,15 @@ Najważniejszym dokumentem źródłowym zadania, nadrzędnym wobec naszych opis�
 
 ## Struktura repo
 
-- `backend/` — Java 21 + Spring Boot 3, Spring Cloud Gateway (reactive) jako szkielet control layera; kontrole jako własne `GatewayFilterFactory` (szczegóły: VISION.md §3–4)
+- `backend/` — Java 25 + Spring Boot 4 (Gradle), Spring Cloud Gateway (reactive) jako szkielet control layera; kontrole jako własne `GatewayFilterFactory` (szczegóły: VISION.md §3–4)
 - `frontend/` — React + TypeScript + Tailwind: demo-chat + dashboard bezpieczeństwa
 - sidecar semantyczny (Python/FastAPI, do dodania) — klasyfikatory prompt-injection/jailbreak, wołany przez gateway po HTTP
 
 ## Jak uruchomić projekt
 
-`docker-compose.yml` jest na razie szkieletem (Postgres + backend + frontend) — Dockerfile'e
-w `backend/` i `frontend/` jeszcze nie istnieją. Przed pierwszym pełnym uruchomieniem
-dopisz je zgodnie ze stackiem z `VISION.md` §3. Model LLM uruchamiany jest osobno przez
+Backend: zob. [`backend/README.md`](backend/README.md) — profil `local` (H2 + Hibernate, bez
+Dockera) albo `prod` (Postgres + Flyway, `docker compose up -d db`); wspólne run configi
+IntelliJ są w `.run/`. Dockerfile frontendu jeszcze nie istnieje. Model LLM uruchamiany jest osobno przez
 Ollamę na Raspberry Pi (sieciowo, nie w docker-compose).
 
 ## Konwencje kodu

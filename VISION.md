@@ -48,10 +48,10 @@ z modelem i nie ryzykować, że demo się zatnie.
 
 | Warstwa | Wybór | Uwaga |
 |---|---|---|
-| Gateway/backend | Java 21 + Spring Boot 3, **Spring Cloud Gateway** (reactive/WebFlux) | Kontrole implementujemy jako własne `GatewayFilterFactory`; routing+config YAML dają nam "policy engine" niemal za darmo |
+| Gateway/backend | Java 25 + Spring Boot 4.1 + Spring Cloud 2025.1, **Spring Cloud Gateway** (reactive/WebFlux), build: Gradle (Groovy DSL, bez Kotlina) | Kontrole implementujemy jako własne `GatewayFilterFactory`; routing+config YAML dają nam "policy engine" niemal za darmo |
 | Semantyka AI | Python + FastAPI, sidecar wołany przez gateway po HTTP (localhost) | Modele HF/ONNX — ekosystem Pythona jest tu dużo bogatszy niż JVM |
-| Model chroniony | Ollama na Raspberry Pi | Domyślnie `qwen2.5:1.5b-instruct-q4_K_M` (~10-15 tok/s na Pi5 8GB CPU-only — balans szybkość/jakość); `qwen2.5:0.5b` lub `gemma3:1b` jako szybsza alternatywa w allowlist modeli. Offline, bez kluczy, bez kosztów. Postawione w `docker-compose.yml` (`ollama` + `ollama-init`) |
-| Baza danych | PostgreSQL | Polityki, audit log, liczniki budżetu. `pgvector` opcjonalnie pod embedding similarity |
+| Model chroniony | Ollama na Raspberry Pi, mały model (0.5B–3B) | Offline, bez kluczy, bez kosztów |
+| Baza danych | PostgreSQL (prod), H2 in-memory (profil `local`) | Polityki, audit log, liczniki budżetu. Dostęp przez JPA/Hibernate (JDBC, blokujące wywołania poza event loop). Schemat w prod: wyłącznie Flyway; lokalnie: Hibernate `ddl-auto`. `pgvector` opcjonalnie pod embedding similarity |
 | Cache/rate-limit (opcja, jeśli starczy czasu) | Redis | Tylko jeśli Postgres okaże się za wolny pod liczniki — nie blokować się na tym |
 | Frontend | React + TypeScript + Tailwind | Dwa widoki w jednej SPA: demo-chat uderzający w gateway + dashboard bezpieczeństwa |
 | Konteneryzacja | docker-compose (już w repo, do uzupełnienia) | db + backend + frontend + sidecar |
@@ -136,10 +136,8 @@ kryterium "Robustness of the Solution" (30% wagi — najważniejsze).
 
 ## 8. Status implementacji
 
-`backend/` to na razie pusty katalog (placeholder). `frontend/` ma szkielet (Vite + React +
-TS + Tailwind 3 + Recharts): playground z trace, dashboard, audit log, polityki, placeholder
-session graph; działa na mockach (`VITE_USE_MOCKS=true`), kontrakt API w
-`frontend/src/api/types.ts` do uzgodnienia z gatewayem. `docker-compose.yml` jest
-szkieletem do uzupełnienia o sidecar i realne Dockerfile'e. Ten dokument opisuje docelowy
+`backend/` ma startowy szkielet (Gradle, profile `local`/`prod`, passthrough route do Ollamy
+bez filtrów, Dockerfile, run configi IntelliJ w `.run/`) — bez żadnych kontroli.
+`frontend/` to pusty katalog. `docker-compose.yml` wymaga jeszcze sidecara i Dockerfile'a frontendu. Ten dokument opisuje docelowy
 kształt — aktualizujcie go, gdy decyzje architektoniczne się zmienią, żeby nie rozjechał się
 z kodem.
