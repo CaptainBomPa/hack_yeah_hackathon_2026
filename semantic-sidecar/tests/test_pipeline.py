@@ -39,7 +39,10 @@ def test_health_and_empty_pipeline():
     assert h["status"] == "ok" and h["detectors"] == [] and h["pre_normalized"] is True and h["details"] == []
     r = c.post("/classify", json={"checkpoint": "P1", "text": "hello"})
     assert r.status_code == 200
-    assert r.json()["checkpoint"] == "P1" and r.json()["results"] == []
+    body = r.json()
+    assert body["checkpoint"] == "P1" and body["results"] == []
+    assert body["covered"] is False and body["complete"] is False
+    assert body["missing_checks"] == [{"check": "coverage", "status": "skipped", "reason": "no_detector_for_checkpoint"}]
 
 
 def test_detector_result_follows_contract():
@@ -54,6 +57,9 @@ def test_detector_skipped_for_other_checkpoint():
     c = client({"fixed": FixedDetector()}, ["fixed"])
     body = c.post("/classify", json={"checkpoint": "P4", "text": "x"}).json()
     assert body["results"] == []
+    # brak detektora dla P4 to brak pokrycia, nie "sprawdzone"
+    assert body["covered"] is False and body["complete"] is False
+    assert c.post("/classify", json={"checkpoint": "P1", "text": "x"}).json()["covered"] is True
 
 
 def test_failing_detector_is_error_not_zero():

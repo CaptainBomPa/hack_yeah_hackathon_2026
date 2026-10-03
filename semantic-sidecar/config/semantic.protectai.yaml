@@ -1,5 +1,6 @@
+# Konfiguracja WYŁĄCZNIE do odtworzenia porównań (wagi i kalibracja USUNIĘTE 2026-10-03; przywrócenie: zob. komentarz w config/models.yaml): poprzedni detektor `protectai` (zastąpiony Horizonem 2026-10-03, zob. docs/models.md).
 # Konfiguracja z modelami AI (testy i ewaluacja). Użycie:
-#   SEMANTIC_CONFIG=config/semantic.models.yaml uvicorn app.main:app --port 8001
+#   SEMANTIC_CONFIG=config/semantic.protectai.yaml uvicorn app.main:app --port 8001
 #   python -m evaluation.run --inprocess --config config/semantic.models.yaml
 # Wymaga pobranych modeli: python -m scripts.fetch_models. Domyślny config/semantic.yaml nie ładuje modeli.
 # Modele są wymienne: zmiana `model_dir` i `positive_label` wystarcza, bez zmian w kodzie.
@@ -21,14 +22,12 @@ evidence:
   digest_key_env: SEMANTIC_EVIDENCE_KEY
 
 detectors:
-  injection_classifier_horizon:
+  injection_classifier_protectai:
     kind: hf_classifier
     enabled: true
     params:
-      model_dir: models/injection_classifier_horizon   # Horizon-Labs/prompt-injection-guard-small (Apache-2.0), zob. config/models.yaml
+      model_dir: models/injection_classifier_protectai
       positive_label: INJECTION
-      calibration: config/calibration/injection_classifier_horizon.json   # scripts/calibrate.py --fit heldout
-      # target_prior: 0.05    # opcjonalnie: przesuń wynik na inną częstość ataków (dopasowano przy 23%)
-      max_length: 512         # okna jak w pomiarach (model obsługuje do 8k tokenów)
+      # target_prior: 0.05    # opcjonalnie: przesuń wynik na inną częstość ataków (dopasowano przy 60%)
       label: injection
       checkpoints: [P1, P2, P5]

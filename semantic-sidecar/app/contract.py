@@ -81,7 +81,7 @@ class DetectorResult(BaseModel):
 class MissingCheck(BaseModel):
     """Kontrola, która miała się wykonać, a nie dała wyniku. Gateway decyduje, co z tym zrobić (domyślnie fail-closed)."""
 
-    check: str  # nazwa detektora albo "normalization"
+    check: str  # nazwa detektora, "normalization" albo "coverage" (żaden detektor nie obsługuje punktu kontroli)
     status: Status
     reason: str
 
@@ -98,5 +98,6 @@ class ClassifyResponse(BaseModel):
     checkpoint: Checkpoint
     results: list[DetectorResult]
     complete: bool = True  # false, gdy `missing_checks` nie jest puste
+    covered: bool = True  # false: żaden włączony detektor nie obsługuje tego punktu kontroli. Pusta lista wyników NIE znaczy "sprawdzone"
     missing_checks: list[MissingCheck] = Field(default_factory=list)
     normalization: NormalizationInfo | None = None

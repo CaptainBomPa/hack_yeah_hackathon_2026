@@ -8,7 +8,7 @@ docker compose ps             # stan usług
 docker compose down           # zatrzymanie (dane w wolumenach zostają)
 ```
 
-Pierwszy start pobiera obrazy i modele: Ollama ok. 1,4 GB (`qwen2.5:1.5b`, `qwen2.5:0.5b`), sidecar ok. 750 MB (`protectai`).
+Pierwszy start pobiera obrazy i modele: Ollama ok. 1,4 GB (`qwen2.5:1.5b`, `qwen2.5:0.5b`), sidecar ok. 600 MB (`Horizon-Labs/prompt-injection-guard-small`).
 
 | Usługa | Adres |
 |---|---|
@@ -47,5 +47,5 @@ W odpowiedzi `trace` pokazuje każdą kontrolę: `kind` (`deterministic` albo `s
 - **Normalizacji w gatewayu jeszcze nie ma** (robi ją zespół). Ataki zakodowane (base64, hex, homoglify) mogą przejść. Tymczasowo sidecar potrafi normalizować sam:
   w `semantic-sidecar/config/semantic.models.yaml` ustaw `input.pre_normalized: false` i zrestartuj sidecara (`docker compose restart semantic-sidecar`).
 - Sidecar pokrywa dziś **tylko wejście (P1)**. Odpowiedź modelu i wywołania narzędzi nie mają kontroli semantycznej.
-- Jeden klasyfikator (`protectai`): jailbreaki wykrywa w ok. 49%, a trudne negatywy (teksty *o* injection) dają 26-35% fałszywych alarmów. Zob. `semantic-sidecar/docs/models.md`.
+- Jeden klasyfikator (Horizon small), próg blokady 0,9: na naszych atakach recall ok. 85%, na NotInject (trudne negatywy) ok. 1% fałszywych alarmów. Na zewnętrznych danych recall jest niższy (np. `deepset` ok. 23% przy tym progu, bo wiele jego ataków nie ma wyraźnych sygnałów). Zob. `semantic-sidecar/docs/models.md`.
 - Pierwsze zapytanie do Ollamy bywa wolne (ładowanie modelu).

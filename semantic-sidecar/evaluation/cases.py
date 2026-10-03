@@ -31,7 +31,7 @@ def _read_file(path: Path) -> list[dict]:
     if path.suffix in (".yaml", ".yml"):
         return yaml.safe_load(path.read_text(encoding="utf-8")) or []
     if path.suffix == ".jsonl":
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
     return []
 
 

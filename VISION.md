@@ -242,7 +242,10 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
   (503) przy awarii; API `/api/audit/**` (rola ADMIN) i ekran Audit log we frontendzie;
   na Postgresie dodatkowo trigger append-only (zob. `docs/deterministic/27-audit-logging.md`);
 - `frontend/` — Playground (czat + X-ray) i Audit log podłączone do backendu; reszta widoków na mockach;
-- provider analizy semantycznej ani opcjonalny lokalny sidecar nie mają jeszcze implementacji;
+- `semantic-sidecar/` — **działa**: lokalny sidecar Python/FastAPI (port 8001) z klasyfikatorem prompt injection
+  `Horizon-Labs/prompt-injection-guard-small` (Apache-2.0, 141M, kalibrowany), wołany przez guard `SEM-001`
+  (próg blokady 0,9 w `application.yml`, fail-closed). Pokrywa P1, P2, P5; P3 i P4 raportuje jako brak pokrycia
+  (`covered: false`). Dobór modelu i pomiary: `semantic-sidecar/docs/models.md`. Nie sprawdzony na Raspberry Pi;
 - `docker-compose.yml` — docelowo wdrażany w całości na Raspberry Pi: baza, backend i Ollama
   żyją w jednej sieci docker na tym samym hoście (backend łączy się z Ollamą przez nazwę
   usługi `ollama`, nie przez LAN). `OLLAMA_BASE_URL` pozwala deweloperowi nadpisać to lokalnie

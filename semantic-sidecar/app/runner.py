@@ -62,6 +62,10 @@ class SemanticRunner:
         if norm_failure:
             missing.append(MissingCheck(check="normalization", status=norm_failure[0], reason=norm_failure[1]))
 
+        covered = any(req.checkpoint in det.checkpoints for det in self.detectors)
+        if not covered:
+            missing.append(MissingCheck(check="coverage", status=Status.SKIPPED, reason="no_detector_for_checkpoint"))
+
         fallback = Normalized(req.text, req.text, None, [], Signals(error=True))
         futures: dict[Future, Detector] = {}
         for det in self.detectors:
@@ -93,6 +97,7 @@ class SemanticRunner:
             checkpoint=req.checkpoint,
             results=results,
             complete=not missing,
+            covered=covered,
             missing_checks=missing,
             normalization=self._info(norm, norm_failure),
         )

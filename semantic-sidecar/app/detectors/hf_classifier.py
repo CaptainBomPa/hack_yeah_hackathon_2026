@@ -49,7 +49,7 @@ class HFClassifierDetector(Detector):
         if threads:
             torch.set_num_threads(threads)
         self._torch = torch
-        self._tok = AutoTokenizer.from_pretrained(path)
+        self._tok = AutoTokenizer.from_pretrained(path, trust_remote_code=False)  # jawnie: bez pytania i bez kodu zdalnego
         self._model = AutoModelForSequenceClassification.from_pretrained(path).eval()
         self._lock = threading.Lock()  # szybkie tokenizatory HF nie są bezpieczne przy współbieżnym użyciu
         id2label = self._model.config.id2label or {}

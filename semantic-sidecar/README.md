@@ -24,7 +24,7 @@ docker compose up -d --build semantic-sidecar     # z korzenia repo; init pobier
 curl -s localhost:8001/health
 ```
 
-- **Pierwszy start wymaga internetu** (Hugging Face, ok. 750 MB: model `protectai`). Kolejne starty działają offline: `semantic-sidecar-init` pomija modele już obecne w wolumenie (`--if-missing`, sprawdza rozmiary z `models/MANIFEST.json`).
+- **Pierwszy start wymaga internetu** (Hugging Face, ok. 600 MB: model Horizon small). Kolejne starty działają offline: `semantic-sidecar-init` pomija modele już obecne w wolumenie (`--if-missing`, sprawdza rozmiary z `models/MANIFEST.json`).
 - **Praca w pełni offline od pierwszego razu:** `docker build --build-arg BAKE_MODELS=1 -t semantic-sidecar semantic-sidecar/` (modele trafiają do obrazu).
 - Obraz używa **CPU-owego PyTorcha** (`download.pytorch.org/whl/cpu`, działa na arm64 i x86_64) i przypiętych wersji z `constraints.txt`. Domyślne koło z PyPI na x86 ciągnie biblioteki CUDA (ok. 2,5 GB).
 - `config/` jest montowane z hosta tylko do odczytu (progi, kalibracja). **Zmiana wymaga restartu** (hot-reload jeszcze nie istnieje).

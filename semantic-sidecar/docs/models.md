@@ -200,3 +200,46 @@ Pomiar end-to-end po poprawkach (2005 przypadków, Mac, CPU): `protectai` AUROC 
   `VISION.md` §10 mówi o wdrożeniu bazy, backendu i Ollamy na Pi, a miejsce sidecara nie jest tam ustalone.
 - ~~Czy `Jailbreak-Detector` w ogóle działa sensownie.~~ Zmierzone: nie wystarczająco, usunięty.
 - Jakość etykiet w danych treningowych poszczególnych modeli (nie audytowałem licencji danych treningowych).
+
+## Porównanie kandydatów (2026-10-03, próg 0,5, bez kalibracji; `config/semantic.{models,piguard,horizon}.yaml`)
+
+Modele: `protectai` (obecny), PIGuard (`leolee99/PIGuard`, MIT, rev. dd78b24e, własny loader `app/detectors/piguard_model.py`, bez `trust_remote_code`),
+Horizon `prompt-injection-guard-small` (Apache-2.0, rev. 3215a27e, ModernBERT/mmBERT-small, standardowa klasa).
+**Zanieczyszczenie danymi (z kart/paperów): PIGuard trenowany na `deepset` i `jackhhao`; Horizon na `neuralchemy` i `in-the-wild`; `protectai` na `jackhhao`.
+Wyniki na takim zbiorze dla danego modelu są bez wartości (oznaczone †).**
+
+| Zbiór | Metryka | protectai | PIGuard | Horizon small |
+|---|---|---|---|---|
+| NotInject (339 trudnych negatywów) | FPR | 49,9% | 11,5% | **10,0%** |
+| Nasze ręczne (122) | AUROC / recall przy FPR≤1% | 0,930 / 58,7% | 0,913 / 47,8% | **0,983 / 82,6%** |
+| deepset (n=662) | AUROC / recall @0,5 / FPR | 0,885 / 55% / 2,2% | † | **0,982 / 82,5% / 0,0%** |
+| in-the-wild (n=600) | AUROC / FPR | 0,871 / 32% | 0,924 / 21% | † 0,946 / 5,8% |
+| neuralchemy (n=1883) | AUROC | 0,974 | 0,871 | † 0,992 |
+| Latencja detektora p50 (Mac) | | ok. 47 ms | ok. 45 ms | **ok. 14 ms** |
+| Szczytowe RSS procesu (Mac) | | 0,91 GB | 1,73 GB (loader ładuje wagi dwa razy, do poprawy) | 0,84 GB |
+
+Zastrzeżenie: nasze 122 przypadki są małe (szerokie przedziały ufności), a przypadki Horizonu o tej samej taksonomii mogą być podobne do jego danych syntetycznych.
+
+## Uczciwe porównanie `protectai` vs Horizon small (2026-10-03, `scripts/compare_detectors.py`)
+
+Porównanie rankingów (marginesy logitów, więc niezależne od kalibracji i progu) wyłącznie na zbiorach **czystych dla obu modeli** (zob. nagłówek skryptu):
+NotInject, OR-Bench-hard (600), nasze trudne negatywy; deepset, Lakera (400), Simsonsun (400), nasze ataki; BIPIA i PIArena (P2, próbki zrównoważone).
+Bootstrap 1000 powtórzeń, 95% przedziały ufności, różnice sparowane.
+
+| Scenariusz | Metryka | protectai | Horizon small | Różnica (95% CI) |
+|---|---|---|---|---|
+| ataki bezpośrednie (1109) vs TRUDNE negatywy (968) | AUROC | 0,848 | **0,972** | +0,124 [+0,110, +0,139] |
+| | recall @ FPR 1% | 39,5% | **69,5%** | +31,9 pp [+18, +42] |
+| | recall @ FPR 5% | 48,9% | **88,4%** | |
+| ataki bezpośrednie vs ZWYKŁE negatywy (422) | AUROC | 0,962 | **0,991** | +0,029 [+0,021, +0,038] |
+| | recall @ FPR 1% | 74,8% | **92,4%** | +20,4 pp [+11, +29] |
+| P2 BIPIA (kontekst zaatakowany vs czysty) | AUROC | 0,456 (poziom losowy) | 0,760 | |
+| P2 PIArena | AUROC | 0,753 | **0,983** | |
+| Latencja detektora, krótkie teksty (p50 / p95, Mac) | ms | 46 / 61 | **16 / 23** | |
+
+Recall per zbiór przy progu dającym FPR 1% na puli trudnych negatywów: deepset 8% → 57%, Simsonsun 9% → 49%, Lakera 90% → 95%, nasze ataki 50% → 96%,
+PIArena 0,3% → 86%, BIPIA 0,6% → 22%. FPR na zbiorach negatywów: porównywalny (NotInject 2,4% w obu).
+
+Zastrzeżenia: BIPIA i PIArena zbudowali pozytywy/negatywy autorzy Horizona (z cudzych danych), a Horizon trenował na podobnych, własnych dokumentach z wstrzyknięciami,
+więc przewaga w P2 może być zawyżona. Próg FPR 1% dobrano na tych samych negatywach, na których liczony jest recall (obciąża oba modele jednakowo).
+`protectai` nie jest przystosowany do P2 (karta: nie wykrywa jailbreaków, odradza system prompty), co tłumaczy jego wynik na BIPIA.

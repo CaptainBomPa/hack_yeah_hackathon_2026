@@ -15,7 +15,7 @@ Sidecar ocenia tekst i zwraca **sygnały ryzyka**. Gateway (Java) na ich podstaw
   politykę i ostateczną decyzję. Sidecar nie proponuje akcji.
 - **Sidecar dostaje tekst już znormalizowany** (`input.pre_normalized: true`). Normalizacja, reguły i sygnatury to kod
   deterministyczny po stronie Javy. Kontrakt: [`docs/input-contract.md`](docs/input-contract.md).
-- **W sidecarze ma być AI.** Reguły (w tym `obfuscation`) tu nie pasują. Sidecar na razie nie ma żadnego detektora AI.
+- **W sidecarze ma być AI.** Reguły (w tym `obfuscation`) tu nie pasują. Detektor AI: `Horizon-Labs/prompt-injection-guard-small` (od 2026-10-03, wcześniej `protectai`; kroki D i sekcja 7 poniżej opisują historię na `protectai`).
 - Port sidecara: **8001**.---
 
 ## 1. Zrobione
@@ -36,6 +36,8 @@ Sidecar ocenia tekst i zwraca **sygnały ryzyka**. Gateway (Java) na ich podstaw
 | ✅ | Eksperyment kNN | `scripts/knn_experiment.py`, `docs/knn-experiment.md`, `evaluation/index_corpus/` | wynik negatywny, opisany |
 | ✅ | Docker | `Dockerfile`, `constraints.txt`, `../docker-compose.yml` | zbudowany i uruchomiony w Docker Desktop (arm64), obraz 1,15 GB, RSS ok. 0,88 GiB (jeden model), działa offline. Nie sprawdzony na Pi |
 | ✅ | **Integracja z gatewayem (guard SEM-001) i dowód na prawdziwym stacku** | `backend/.../guard/semantic/`, `scripts/demo-up.sh`, `docs/local-stack.md` | atak blokowany przed modelem, fail-closed, 51 testów Javy |
+| ✅ | Zbiory zewnętrzne pobrane i zmierzone (2026-10-03): `deepset`, `Lakera`, `in-the-wild` (`jackhhao` pominięty: zanieczyszczenie, `protectai` trenowano m.in. na nim) | `evaluation/data/`, `evaluation/fetch_public.py` | `deepset`: recall 55%, FPR 2,2%, AUROC 0,885 (niemiecki = angielski: 55% vs 53%). `in-the-wild`: recall 85%, FPR 32% (część to szum etykiet: „regularne" prompty to persony i role-play, w tym „Please ignore all prior prompts"). `Lakera` same ataki: recall 100% (n=600). Naprawiony błąd czytnika JSONL (`splitlines` ciął na U+2028) |
+| ✅ | **Zmiana modelu: Horizon small zastępuje `protectai`** (2026-10-03) | `config/models.yaml`, `config/semantic.models.yaml`, `config/calibration/injection_classifier_horizon.json`, `scripts/compare_detectors.py` | Uczciwe porównanie na zbiorach czystych dla obu: AUROC vs trudne negatywy 0,972 vs 0,848, recall @FPR 1% 69,5% vs 39,5%, latencja ok. 3x niższa. Kalibracja na deepset-train + NotInject. Próg Javy 0,998 → 0,9. Sprawdzone w Dockerze (init pobiera model, sidecar healthy, atak 403 przez gateway). Zob. `docs/models.md`, `docs/decisions.md` |
 | ✅ | Testy sidecara | `tests/` | 107 przechodzi |
 
 ### Co pokazały pomiary (wstępnie)
@@ -215,8 +217,8 @@ Kolejność = proponowany priorytet. Każdy detektor zostaje tylko wtedy, gdy po
 - [ ] Hot-reload progów i konfiguracji (`watchfiles`), metryki (p50/p95 per detektor, timeouty), strukturalne logi bez sekretów
 
 ### Znana pułapka kontraktu (do rozstrzygnięcia przed spięciem)
-- [ ] **Brak pokrycia wygląda jak „sprawdzone".** Dla punktu kontroli bez żadnego detektora (dziś P3, P4) sidecar zwraca `results: []` i `complete: true`. Gateway może to
-      odczytać jako „przeszło kontrolę". Trzeba jawnie zgłaszać „brak pokrycia semantycznego" (np. pole `coverage_checkpoint: false`) albo ustalić z Javą, że pusta lista = brak kontroli
+- [x] **Brak pokrycia wygląda jak „sprawdzone": naprawione.** Punkt kontroli bez detektora (dziś P3, P4) zwraca `covered: false`, `complete: false`
+      i wpis `missing_checks: {check: "coverage", reason: "no_detector_for_checkpoint"}`. Guard Javy już traktował pustą listę jako brak pokrycia (fail-closed), więc zmiana jest zgodna wstecz
 
 ### Przygotowanie do spięcia (nie wymaga Javy)
 - [ ] Odpowiedzi zespołu Java na pytania z `docs/input-contract.md` §4 (warianty, kontekst, normalizacja P4)

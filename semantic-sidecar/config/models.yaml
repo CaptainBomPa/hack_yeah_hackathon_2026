@@ -8,15 +8,19 @@
 # Usunięty: madhurjindal/Jailbreak-Detector (słaby: 2 proc. ataków przy FPR <= 1 proc. na neuralchemy). Przywrócenie: repo
 # madhurjindal/Jailbreak-Detector, rewizja 93883e180f4d6585a0afae703095ba4a9ebce888, pliki [model.safetensors, *.json, *.txt], ignore [checkpoint-*/*].
 
+# Zastąpiony 2026-10-03 przez Horizon (zob. docs/models.md, uczciwe porównanie): protectai/deberta-v3-base-prompt-injection-v2,
+# rewizja 90c9989b1a342275dd0d1a95aad283c04e075671, pliki [model.safetensors, *.json, *.model, README.md], ignore [onnx/*].
+# Dalej używany lokalnie przez scripts/compare_detectors.py (config/semantic.protectai.yaml), pobierz go wtedy ręcznie.
+
 models:
-  injection_classifier_protectai:
-    repo: protectai/deberta-v3-base-prompt-injection-v2
-    role: klasyfikator prompt injection, większy kandydat do porównania z fmops (P1, P2, P5 zapis)
+  injection_classifier_horizon:
+    repo: Horizon-Labs/prompt-injection-guard-small
+    role: klasyfikator prompt injection i jailbreak (P1, P2, P5), ModernBERT/mmBERT-small, 141M parametrów
     license: apache-2.0
-    expected_mb: 750        # model.safetensors 738 MB + tokenizer
-    revision: 90c9989b1a342275dd0d1a95aad283c04e075671
-    files: ["model.safetensors", "*.json", "*.model", "README.md"]
-    ignore: ["onnx/*"]      # wersja ONNX (739 MB) zdublowałaby wagi
+    expected_mb: 600         # model.safetensors 563 MB + tokenizer 34 MB (bez onnx/, code/, eval/, training/)
+    revision: 3215a27edd62c5ba0bd786c57a9d243b2158e70e
+    files: ["model.safetensors", "config.json", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json", "README.md"]
+    ignore: ["onnx/*", "code/*", "eval/*", "training/*"]
 
   embeddings_minilm:
     repo: sentence-transformers/all-MiniLM-L6-v2
