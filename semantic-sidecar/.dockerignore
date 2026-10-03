@@ -1,0 +1,12 @@
+# Obraz zawiera tylko app/, scripts/ i config/. Reszta (zwłaszcza .venv i modele, setki MB) nie może trafiać do kontekstu budowania.
+.venv
+models
+evaluation
+tests
+docs
+*.md
+__pycache__
+*.pyc
+.pytest_cache
+*.egg-info
+.git

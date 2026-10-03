@@ -1,0 +1,33 @@
+# Konfiguracja z modelami AI (testy i ewaluacja). Użycie:
+#   SEMANTIC_CONFIG=config/semantic.models.yaml uvicorn app.main:app --port 8001
+#   python -m evaluation.run --inprocess --config config/semantic.models.yaml
+# Wymaga pobranych modeli: python -m scripts.fetch_models. Domyślny config/semantic.yaml nie ładuje modeli.
+# Modele są wymienne: zmiana `model_dir` i `positive_label` wystarcza, bez zmian w kodzie.
+
+input:
+  pre_normalized: true
+
+limits:
+  max_input_chars: 20000
+
+deadlines:
+  request_deadline_ms: 5000      # luźniej niż domyślnie: pierwsze wywołanie modelu bywa wolne
+  detector_timeout_ms: 3000
+  normalization_timeout_ms: 500
+  max_workers: 8
+
+evidence:
+  include_preview: false
+  digest_key_env: SEMANTIC_EVIDENCE_KEY
+
+detectors:
+  injection_classifier_protectai:
+    kind: hf_classifier
+    enabled: true
+    params:
+      model_dir: models/injection_classifier_protectai
+      positive_label: INJECTION
+      calibration: config/calibration/injection_classifier_protectai.json   # scripts/calibrate.py
+      # target_prior: 0.05    # opcjonalnie: przesuń wynik na inną częstość ataków (dopasowano przy 60%)
+      label: injection
+      checkpoints: [P1, P2, P5]

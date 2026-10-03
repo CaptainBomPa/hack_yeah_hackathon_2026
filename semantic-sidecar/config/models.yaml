@@ -1,0 +1,37 @@
+# Modele do pobrania (dane, nie kod). Zob. docs/models.md.
+# `revision: null` = przy pierwszym pobraniu skrypt wpisze tu hash commita (pin), żeby wynik był powtarzalny.
+# Pliki są pobierane tylko z listy `files` (bez duplikatów formatów, checkpointów i optymalizatorów).
+
+# Usunięty po pomiarze: fmops/distilbert-prompt-injection (75 proc. fałszywych alarmów na naszych niewinnych przypadkach).
+# Przywrócenie: repo fmops/distilbert-prompt-injection, rewizja c5da1fefd33c98c447b50dd806fe86aeb9e8c26c, pliki [model.safetensors, *.json, *.txt].
+
+# Usunięty: madhurjindal/Jailbreak-Detector (słaby: 2 proc. ataków przy FPR <= 1 proc. na neuralchemy). Przywrócenie: repo
+# madhurjindal/Jailbreak-Detector, rewizja 93883e180f4d6585a0afae703095ba4a9ebce888, pliki [model.safetensors, *.json, *.txt], ignore [checkpoint-*/*].
+
+models:
+  injection_classifier_protectai:
+    repo: protectai/deberta-v3-base-prompt-injection-v2
+    role: klasyfikator prompt injection, większy kandydat do porównania z fmops (P1, P2, P5 zapis)
+    license: apache-2.0
+    expected_mb: 750        # model.safetensors 738 MB + tokenizer
+    revision: 90c9989b1a342275dd0d1a95aad283c04e075671
+    files: ["model.safetensors", "*.json", "*.model", "README.md"]
+    ignore: ["onnx/*"]      # wersja ONNX (739 MB) zdublowałaby wagi
+
+  embeddings_minilm:
+    repo: sentence-transformers/all-MiniLM-L6-v2
+    role: embeddingi do kNN (kandydat 1)
+    license: apache-2.0
+    expected_mb: 92
+    revision: 1110a243fdf4706b3f48f1d95db1a4f5529b4d41
+    files: ["model.safetensors", "*.json", "*.txt", "1_Pooling/*", "README.md"]
+    ignore: ["onnx/*", "openvino/*"]
+
+  embeddings_bge_small:
+    repo: BAAI/bge-small-en-v1.5
+    role: embeddingi do kNN (kandydat 2)
+    license: mit
+    expected_mb: 134
+    revision: 5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
+    files: ["model.safetensors", "*.json", "*.txt", "1_Pooling/*", "README.md"]
+    ignore: ["onnx/*"]
