@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Test;
 class ModelAccessPolicyTest {
 
     private final ModelAccessPolicy policy = new ModelAccessPolicy(new PolicyProperties(Map.of(
-            "admin", new PolicyProperties.RolePolicy(List.of("*")),
-            "chat", new PolicyProperties.RolePolicy(List.of("model-a")))));
+            "admin", new PolicyProperties.RolePolicy(List.of("*"), null),
+            "chat", new PolicyProperties.RolePolicy(List.of("model-a"), null))));
 
     @Test
     void wildcardRoleMayUseAnyModel() {
