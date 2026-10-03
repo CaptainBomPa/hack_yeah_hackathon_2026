@@ -123,30 +123,29 @@ status `degraded/error`, **nigdy „czysto”** (VISION §4, tooling.md).
 
 | Kto → do kogo | Mechanizm |
 |---|---|
-| Człowiek → dashboard (`/api/*`, UI) | OAuth2/OIDC w gatewayu (Spring Security `oauth2Login`, wzorzec BFF) |
-| Klient LLM → `/v1/*` | poza logowaniem ludzi; identyfikacja wywołującego to krok 1 pipeline'u (VISION §2), do ustalenia |
+| Człowiek → UI | konto lokalne (`backend/config/users.yaml` → baza), `POST /api/auth/login` → ciasteczko `SESSION` |
+| Agent, SDK, runner testów → `/v1/*` | HTTP Basic przy każdym żądaniu, bez sesji |
 | Gateway → Ollama / provider semantyczny | adres i poświadczenia z env gatewaya; nigdy w przeglądarce |
 
-- Flow OAuth2 robi gateway. Przeglądarka dostaje tylko ciasteczko sesji `HttpOnly; SameSite=Lax`;
-  tokeny IdP nie trafiają do JS. Front nie zna IdP.
-- Dostawcy: Google i/lub Keycloak w compose (offline). Google akceptuje redirect tylko na `localhost`,
-  nie na prywatne IP.
-- **Role:** VISION §1 mówi, że rozbudowane role nie są warunkiem MVP. W MVP każdy zalogowany ma pełny dostęp;
-  podział `viewer`/`admin` jest P1 i front jest na niego przygotowany (`roles` w `/api/me`).
-- `auth.mode: disabled` tylko do lokalnego developmentu i mocków.
-- CSRF: front czyta ciasteczko `XSRF-TOKEN` i wysyła nagłówek `X-XSRF-TOKEN` przy POST/PUT/PATCH/DELETE na `/api/*` i `/logout`.
+(Wcześniejszy wariant z OAuth2/Google odrzucony na rzecz `docs/auth/` — działa offline, bez redirectów.)
+
+- Ciasteczko `SESSION`: HttpOnly, SameSite=Lax, `Secure` z `AUTH_COOKIE_SECURE`. Front nie trzyma tokenu.
+- CSRF wyłączony świadomie: SameSite=Lax + endpointy przyjmujące tylko JSON (uzasadnienie w `SecurityConfig.java`).
+- 401 bez `WWW-Authenticate` (brak natywnego okienka przeglądarki). Limit 5 nieudanych prób/min na login → 429.
+- Role z `policy.yaml`: `admin` widzi wszystko; `chat` tylko Playground (front ukrywa i przekierowuje, backend zwraca 403).
+- Sesje w pamięci backendu: restart backendu wylogowuje wszystkich.
 
 Przepływ F0:
-1. Start SPA → `GET /api/me`: `200` aplikacja, `401` ekran logowania z `GET /api/auth/providers`.
-2. „Zaloguj przez X” → redirect na `/oauth2/authorization/{id}` → IdP → callback Springa → powrót na zapamiętaną ścieżkę.
-3. `401` w trakcie pracy → ekran logowania z zachowaniem ścieżki.
-4. `POST /logout` (z CSRF) → ekran logowania.
+1. Start SPA → `GET /api/auth/me`: `200` aplikacja, `401` ekran logowania (na dowolnej ścieżce).
+2. Formularz → `POST /api/auth/login { login, password }` → `200 CurrentUser` + ciasteczko; zostajemy na tej samej ścieżce.
+3. `401` w trakcie pracy (wygasła sesja, restart backendu) → ekran logowania z komunikatem „Sesja wygasła”.
+4. „Wyloguj” → `POST /api/auth/logout` → ekran logowania.
 
 | Metoda | Ścieżka | Odpowiedź |
 |---|---|---|
-| GET | `/api/me` | `200 { id, name, email?, roles: string[], provider }` / `401` |
-| GET | `/api/auth/providers` | `[{ id, name, loginUrl }]`, publiczny |
-| POST | `/logout` | `204`, wymaga CSRF |
+| POST | `/api/auth/login` | `{ login, password }` → `200 { login, role }` / `401 { error: { code: "invalid_credentials" } }` / `429 { error: { code: "too_many_attempts" } }` |
+| GET | `/api/auth/me` | `200 { login, role }` / `401` |
+| POST | `/api/auth/logout` | `204` |
 
 ## 5. Endpointy
 

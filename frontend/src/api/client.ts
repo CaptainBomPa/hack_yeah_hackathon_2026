@@ -4,6 +4,7 @@ import type {
   AuditPage,
   AuditVerifyResult,
   ChatMessage,
+  CurrentUser,
   DashboardStats,
   GuardedChatResponse,
   ModelOption,
@@ -13,13 +14,13 @@ import * as mocks from './mocks'
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true'
 
-export type Feature = 'chat' | 'models' | 'stats' | 'audit' | 'policy'
+export type Feature = 'auth' | 'chat' | 'models' | 'stats' | 'audit' | 'policy'
 
 /**
  * Funkcje, które backend już implementuje — wołają żywy gateway mimo VITE_USE_MOCKS=true.
  * Dopisywać tu kolejne, gdy powstaną ich endpointy. VITE_LIVE_FEATURES nadpisuje tę listę.
  */
-const IMPLEMENTED_IN_BACKEND: Feature[] = ['chat', 'audit']
+const IMPLEMENTED_IN_BACKEND: Feature[] = ['auth', 'chat', 'audit']
 
 const LIVE_FEATURES = new Set(
   import.meta.env.VITE_LIVE_FEATURES !== undefined
@@ -62,6 +63,34 @@ function isGuardedChatResponse(body: unknown): body is GuardedChatResponse {
   )
 }
 
+/** Zdarzenie dla AuthProvider: sesja wygasła albo jej nie ma — pokaż ekran logowania. */
+export const AUTH_REQUIRED_EVENT = 'auth:required'
+
+function authRequired(): AuthRequiredError {
+  window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+  return new AuthRequiredError()
+}
+
+/** Błąd logowania z backendu (`{ error: { code, message } }`): złe dane albo limit prób. */
+export class LoginError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message)
+    this.name = 'LoginError'
+  }
+}
+
+async function loginLive(login: string, password: string): Promise<CurrentUser> {
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ login, password }),
+  })
+  if (res.ok) return res.json() as Promise<CurrentUser>
+  const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null
+  if (body?.error?.message) throw new LoginError(body.error.code ?? 'error', body.error.message)
+  throw new LoginError('unavailable', `Logowanie nie powiodło się (HTTP ${res.status}). Czy backend działa?`)
+}
+
 /** 403 z /api/** — backend wymaga roli ADMIN (SecurityConfig). */
 export class ForbiddenError extends Error {
   constructor() {
@@ -75,7 +104,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
-  if (res.status === 401) throw new AuthRequiredError()
+  if (res.status === 401) throw authRequired()
   if (res.status === 403) throw new ForbiddenError()
   if (res.status === 404 && path.startsWith('/api/'))
     throw new Error(`Backend nie ma endpointu ${path.split('?')[0]} — działa starsza wersja? Przebuduj backend.`)
@@ -120,7 +149,7 @@ async function chatLive({ model, messages, sessionId, signal }: ChatParams): Pro
     throw new GatewayUnavailableError(null, 'Brak połączenia z gatewayem')
   }
 
-  if (res.status === 401) throw new AuthRequiredError()
+  if (res.status === 401) throw authRequired()
 
   const text = await res.text()
   let body: unknown = null
@@ -139,6 +168,19 @@ async function chatLive({ model, messages, sessionId, signal }: ChatParams): Pro
 
 // TODO: ścieżki /api/* to propozycja z docs/frontend-flows-and-api.md — dopasować, gdy powstaną.
 export const api = {
+  /** GET /api/auth/me — 401 (AuthRequiredError) oznacza brak sesji. */
+  me(): Promise<CurrentUser> {
+    if (isMocked('auth')) return mocks.me()
+    return request('/api/auth/me')
+  },
+  login(login: string, password: string): Promise<CurrentUser> {
+    if (isMocked('auth')) return mocks.login(login, password)
+    return loginLive(login, password)
+  },
+  async logout(): Promise<void> {
+    if (isMocked('auth')) return mocks.logout()
+    await fetch('/api/auth/logout', { method: 'POST' })
+  },
   chat(params: ChatParams): Promise<GuardedChatResponse> {
     if (isMocked('chat')) return mocks.chat(params)
     return chatLive(params)

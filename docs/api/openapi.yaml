@@ -7,7 +7,8 @@ info:
 
     **Zaimplementowane:** `POST /v1/chat/completions` (+ nagłówek `X-Session-Id`, zapisywany w audycie),
     `GET /actuator/health`, audyt `/api/audit/**` (lista, rekord, eksport CSV/JSON, weryfikacja łańcucha).
-    **Jeszcze nie:** reszta `/api/**` (dashboard, polityki, modele), formularz logowania.
+    `/api/auth/login|me|logout` (sesja przeglądarki, ciasteczko SESSION; HTTP Basic dalej działa dla maszyn).
+    **Jeszcze nie:** reszta `/api/**` (dashboard, polityki, modele).
 
     **Uwierzytelnianie:** HTTP Basic na kontach lokalnych z rolami (docs/auth/). Konta demo są w
     `backend/config/users.yaml` i działają tylko w profilu `local`. Rola konta decyduje, które

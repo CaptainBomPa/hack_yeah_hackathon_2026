@@ -181,12 +181,13 @@ wołany z kontrolera przed (`INPUT`) i po (`OUTPUT`) wywołaniu modelu. Włącza
 w `control-layer.guards` (`application.yml`); guard bez wpisu jest wyłączony. Pierwszy działający:
 `PII-001` (PESEL). Instrukcja: `docs/deterministic/how-to-write-a-rule.md`.
 
-**Dostęp do dashboardu (`/api/**` i UI) wymaga zalogowania**: OAuth2/OIDC obsługiwane w gatewayu
-(Spring Security `oauth2Login`, wzorzec BFF). Przeglądarka dostaje tylko ciasteczko sesji `HttpOnly`
-i token CSRF, tokeny IdP nie trafiają do JS. IdP wymienny w configu (Google; do decyzji Keycloak w
-compose jako offline default). W MVP każdy zalogowany ma pełny dostęp; role `viewer`/`admin` są
-rozszerzeniem. Logowanie ludzi nie dotyczy `/v1/*`. Kontrakt dashboardu i przepływy frontu:
-[`docs/frontend-flows-and-api.md`](docs/frontend-flows-and-api.md).
+**Logowanie (docs/auth, bez SSO i zewnętrznego IdP — działa offline):** konta lokalne z
+`backend/config/users.yaml`, zakładane w bazie przy starcie (hasła BCrypt). Przeglądarka loguje się
+przez `POST /api/auth/login` i dostaje ciasteczko sesji `SESSION` (HttpOnly, SameSite=Lax; sesje w
+pamięci backendu — restart wylogowuje); maszyny (agenci, runner testów) używają HTTP Basic bez sesji.
+401 nie wywołuje natywnego okienka przeglądarki; limit 5 nieudanych prób/min na login. `/api/**`
+wymaga roli `admin`, `/api/auth/**` każdego zalogowanego, `/v1/*` uwierzytelnienia (sesja albo Basic).
+Kontrakt dashboardu i przepływy frontu: [`docs/frontend-flows-and-api.md`](docs/frontend-flows-and-api.md).
 
 Gateway działa na porcie `8000`, frontend na `3000`. Opcjonalny lokalny sidecar może działać
 na `8001`; zewnętrzny provider jest konfigurowany adresem i poświadczeniami środowiskowymi.
@@ -246,7 +247,8 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
   żyją w jednej sieci docker na tym samym hoście (backend łączy się z Ollamą przez nazwę
   usługi `ollama`, nie przez LAN). `OLLAMA_BASE_URL` pozwala deweloperowi nadpisać to lokalnie
   (np. `bootRun` na laptopie z własną Ollamą pod `localhost:11434`, czyli wartość domyślna);
-- uwierzytelnianie i autoryzacja: plan w `docs/auth/`, implementacja jeszcze się nie zaczęła;
+- uwierzytelnianie: **działa** — konta z `users.yaml` w bazie, ekran logowania we frontendzie
+  (sesja), HTTP Basic dla maszyn, polityka ról w `config/policy.yaml` (zob. §7, `docs/auth/`);
 - termin zgłoszenia projektu: 4.10.2026, 23:00 (RULES, pkt 5);
 - decision pipeline, polityki, guardraile i data-driven test suite są jeszcze do
   zaimplementowania.
