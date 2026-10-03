@@ -1,0 +1,15 @@
+# Compose override for semantic_sidecar_e2e.feature only (testWithSidecar). Testcontainers'
+# ComposeContainer always appends a random suffix to the compose project name on every run
+# (org.testcontainers.containers.ComposeDelegate#randomProjectId), and Docker Compose namespaces
+# named volumes as "<project>_<volume>" — so without this override, `sidecar_models` would get a
+# fresh, empty, project-scoped volume on every single run, and the ~600MB model would re-download
+# from Hugging Face every time instead of once.
+#
+# Pinning it to a fixed external volume (created once by SemanticSidecarE2ESteps before the
+# container starts) makes the cache survive across runs regardless of the random project name.
+# Only applies to the e2e test path — the real docker-compose.yml (deployment) keeps its own
+# project-scoped internal volume unchanged.
+volumes:
+  sidecar_models:
+    external: true
+    name: hackyeah-semantic-sidecar-models-cache
