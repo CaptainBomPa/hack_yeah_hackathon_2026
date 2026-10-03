@@ -1,16 +1,27 @@
-# HackYeah Hackathon 2026
+# HackYeah Hackathon 2026 — AI Control Layer
 
-Repozytorium projektu na HackYeah 2026.
+Gateway zabezpieczający interakcje z lokalnym LLM (Raspberry Pi + Ollama): guardraile
+deterministyczne + semantyczne, budżetowanie, audyt i dashboard bezpieczeństwa.
+
+**Zanim zaczniesz pracować w tym repo (człowiek czy agent AI) — przeczytaj
+[`VISION.md`](VISION.md).** To jedyne źródło prawdy o architekturze, stacku, podziale
+kontroli między zespoły i planie test suite. Zadanie konkursowe:
+[`CRIETRIA AI Control Layer.pdf`](CRIETRIA%20AI%20Control%20Layer.pdf).
 
 ## Struktura repo
 
-- [`backend/`](backend/) — kod backendu (placeholder)
-- [`frontend/`](frontend/) — kod frontendu (placeholder)
-- [`docker-compose.yml`](docker-compose.yml) — placeholder (baza PostgreSQL + backend + frontend, do uzupełnienia)
-- [`CLAUDE.md`](CLAUDE.md) — kontekst i instrukcje dla Claude
-- [`AGENTS.md`](AGENTS.md) — kontekst i instrukcje dla agentów OpenAI/GPT (Codex i inne narzędzia zgodne z konwencją AGENTS.md)
-- [`GEMINI.md`](GEMINI.md) — kontekst i instrukcje dla Gemini
+- [`VISION.md`](VISION.md) — architektura, stack, katalog kontroli, plan testów (czytaj to najpierw)
+- [`backend/`](backend/) — Java 21 + Spring Boot 3 / Spring Cloud Gateway (placeholder)
+- [`frontend/`](frontend/) — React + TypeScript + Tailwind (placeholder)
+- [`docker-compose.yml`](docker-compose.yml) — Postgres + backend + frontend (+ sidecar semantyczny, do dodania)
+- [`CLAUDE.md`](CLAUDE.md) — instrukcje dla Claude (Claude Code i inne narzędzia)
+- [`AGENTS.md`](AGENTS.md) — instrukcje dla agentów OpenAI/GPT (Codex i zgodne z konwencją AGENTS.md)
+- [`GEMINI.md`](GEMINI.md) — instrukcje dla Gemini CLI
+
+Wszystkie trzy pliki agentowe wskazują na ten sam `VISION.md`, żeby nie rozjeżdżał się kontekst
+między narzędziami.
 
 ## Status
 
-Projekt w fazie startowej — struktura repo przygotowana przed hackathonem, implementacja w toku.
+Projekt w fazie startowej — architektura i podział pracy ustalone w `VISION.md`,
+implementacja `backend/`/`frontend/` w toku.
