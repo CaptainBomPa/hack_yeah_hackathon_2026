@@ -1,5 +1,8 @@
 # Open-source alternatives to TypeSafe Jev
 
+This supplementary assessment is subordinate to the repository's primary challenge source,
+[`CRITERIA AI Control Layer.pdf`](../../project-spec/CRITERIA%20AI%20Control%20Layer.pdf).
+
 ## Recommendation: Laya
 
 **[Laya](https://github.com/NandhaKishorM/laya)** is the closest commercially usable open-source replacement for TypeSafe's Jev:

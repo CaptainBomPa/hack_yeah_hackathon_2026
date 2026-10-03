@@ -1,6 +1,9 @@
 # AI Control Layer — prioritized requirements and acceptance tests
 
-Read with the [research report](README.md), [Jev assessment](jev-assessment.md), and [sources](sources.md).
+The authoritative challenge source for these derived requirements is
+[`CRITERIA AI Control Layer.pdf`](../../project-spec/CRITERIA%20AI%20Control%20Layer.pdf).
+Read it with the [research report](README.md), [Jev assessment](jev-assessment.md), and
+[sources](sources.md).
 
 ## 1. How to use this catalog
 

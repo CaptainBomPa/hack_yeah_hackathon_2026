@@ -1,5 +1,8 @@
 # Jev for the AI Control Layer
 
+This assessment is subordinate to the repository's primary challenge source,
+[`CRITERIA AI Control Layer.pdf`](../../project-spec/CRITERIA%20AI%20Control%20Layer.pdf).
+
 **Recommendation:** use Jev as a replaceable, evaluated **semantic risk signal**, with deterministic authorization and resource enforcement outside it. Do not use Jev as the sole prompt-injection defense or final permission authority.
 
 Research date: **2026-10-03**. API examples below are design illustrations based on current documentation; they were **not executed** against TypeSafe. No credentials, live latency measurements, or independent security-efficacy results were obtained.

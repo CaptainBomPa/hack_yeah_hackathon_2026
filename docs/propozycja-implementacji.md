@@ -1,6 +1,10 @@
 # Propozycja implementacji: wyróżnik projektu
 
-Uzupełnienie do [`plan-ai-control-layer.md`](plan-ai-control-layer.md). Bazowy pipeline (proxy, kontrole, polityka, budżety, dashboard, testy) zostaje bez zmian. Ten dokument opisuje, czym odróżnimy się od innych zespołów.
+Uzupełnienie do [`plan-ai-control-layer.md`](plan-ai-control-layer.md). Najważniejszym dokumentem
+źródłowym zadania, nadrzędnym wobec tej propozycji, jest
+[`CRITERIA AI Control Layer.pdf`](../project-spec/CRITERIA%20AI%20Control%20Layer.pdf). Bazowy pipeline
+(proxy, kontrole, polityka, budżety, dashboard, testy) zostaje bez zmian. Ten dokument opisuje,
+czym odróżnimy się od innych zespołów.
 
 ## Co zrobi większość zespołów
 

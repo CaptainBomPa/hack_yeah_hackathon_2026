@@ -4,8 +4,9 @@ Research date: **2026-10-03**. Product capabilities, pricing, model versions, an
 
 ## B0
 
-**Hackathon brief — AI Control Layer**, 4 pages, supplied locally:
-`/Users/bpiechnik/Downloads/e251f2e9-fc1d-45b4-b92e-03be0adce8dc.pdf`.
+**Hackathon brief — AI Control Layer**, 4 pages. This is the repository's primary challenge
+source and is authoritative over the derived proposals and requirements:
+[`CRITERIA AI Control Layer.pdf`](../../project-spec/CRITERIA%20AI%20Control%20Layer.pdf).
 
 Read in full. Authority for deliverables, formal requirements, setup constraints, judge interaction, and evaluation weights.
 

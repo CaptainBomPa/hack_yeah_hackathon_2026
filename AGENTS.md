@@ -12,7 +12,8 @@ egzekwujący guardraile deterministyczne i semantyczne, budżety i audyt bezpiec
 suite jest w [`VISION.md`](VISION.md) — przeczytaj go przed jakąkolwiek zmianą w kodzie.**
 Nie kopiuj jego treści tutaj ani nie podejmuj decyzji architektonicznych sprzecznych z nim bez
 zaktualizowania `VISION.md` najpierw (to jedyne źródło prawdy, wspólne dla Claude/Codex/Gemini).
-Zadanie konkursowe źródłowe: [`CRIETRIA AI Control Layer.pdf`](CRIETRIA%20AI%20Control%20Layer.pdf).
+Najważniejszym dokumentem źródłowym zadania, nadrzędnym wobec naszych opisów rozwiązania, jest
+[`CRITERIA AI Control Layer.pdf`](project-spec/CRITERIA%20AI%20Control%20Layer.pdf).
 
 ## Struktura repo
 

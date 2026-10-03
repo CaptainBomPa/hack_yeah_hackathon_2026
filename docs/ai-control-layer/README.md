@@ -2,7 +2,9 @@
 
 **Research date:** 2026-10-03 · **Status:** recommendation, not an implemented or benchmarked system.
 
-Based on the four-page [hackathon brief](sources.md#b0). This package contains:
+The repository's primary challenge source, authoritative over this proposal, is
+[`CRITERIA AI Control Layer.pdf`](../../project-spec/CRITERIA%20AI%20Control%20Layer.pdf).
+Based on that four-page [hackathon brief](sources.md#b0), this package contains:
 - **This report:** market landscape, recommendation, architecture, trade-offs, and demo plan.
 - **[Requirements](requirements.md):** prioritized, testable requirements and acceptance scenarios.
 - **[Jev assessment](jev-assessment.md):** capabilities, important security limitations, integration design, thresholds, cost, and evaluation plan.
