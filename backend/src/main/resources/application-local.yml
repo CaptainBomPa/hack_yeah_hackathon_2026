@@ -13,6 +13,11 @@ spring:
   flyway:
     enabled: false
 
+# Konta startowe z config/users.yaml (demo). W prod nieaktywne.
+control-layer:
+  seed:
+    enabled: true
+
 logging:
   level:
     org.springframework.cloud.gateway: DEBUG

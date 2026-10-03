@@ -1,0 +1,34 @@
+# Konta startowe (DEMO / HACKATHON). Ładowane przy starcie tylko, gdy control-layer.seed.enabled=true
+# (profil local). Konta już istniejące w bazie nie są zmieniane.
+#
+# UWAGA: hasła są jawne, słabe i publiczne (repo, README). Służą wyłącznie do demo i testów.
+# W profilu prod seeding jest wyłączony; konta produkcyjne tworzy scripts/add-user.sh.
+#
+# Role muszą istnieć w backend/config/policy.yaml (policy.roles): admin, chat, agent.
+control-layer:
+  seed:
+    enabled: true
+    users:
+      # admin: pełny dostęp, /api/** i wszystkie modele
+      - login: admin
+        password: admin
+        role: admin
+
+      # chat: konta do rozdania jury, czat na modelach z policy.roles.chat
+      - login: chat1
+        password: chat1
+        role: chat
+      - login: chat2
+        password: chat2
+        role: chat
+      - login: chat3
+        password: chat3
+        role: chat
+
+      # agent: konta maszynowe (HTTP Basic), modele z policy.roles.agent
+      - login: agent-runner
+        password: agent-runner-123
+        role: agent
+      - login: agent-sdk
+        password: agent-sdk
+        role: agent
