@@ -8,7 +8,6 @@ const NAV: { to: string; label: string; feature?: Feature; adminOnly?: boolean }
   { to: '/playground', label: 'Playground', feature: 'chat' },
   { to: '/dashboard', label: 'Dashboard', feature: 'stats', adminOnly: true },
   { to: '/audit', label: 'Audit log', feature: 'audit', adminOnly: true },
-  { to: '/sessions', label: 'Session graph', adminOnly: true },
   { to: '/policies', label: 'Policies', feature: 'policy', adminOnly: true },
 ]
 

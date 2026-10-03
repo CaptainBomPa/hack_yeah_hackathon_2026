@@ -31,7 +31,6 @@ funkcję do `IMPLEMENTED_IN_BACKEND`. Vite czyta `.env` tylko przy starcie.
 | `/playground` | Czat przez gateway (`/v1/chat/completions`) + Explainable Verdict (X-ray) wybranej wiadomości |
 | `/dashboard` | Kafelki (blokady, redakcje, budżet, p50/p95) + wykresy |
 | `/audit` | Audit log + eksport CSV/JSON |
-| `/sessions` | Session graph (placeholder) |
 | `/policies` | Edycja polityki YAML z hot-reloadem |
 
 ## Struktura
