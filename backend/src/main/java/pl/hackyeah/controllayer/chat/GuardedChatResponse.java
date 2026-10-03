@@ -15,24 +15,31 @@ public record GuardedChatResponse(
         String blockedBy,
         List<ControlTrace> trace,
         Usage usage,
-        BudgetUsage budget) { // null, gdy rola wywołującego nie ma skonfigurowanego limitu
+        BudgetUsage budget, // null, gdy rola wywołującego nie ma skonfigurowanego limitu
+        Long policyVersion, // wersja polityki, która podjęła decyzję (docs/policy-management-plan.md)
+        String policyHash) {
 
     public static GuardedChatResponse allow(
             String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace, BudgetUsage budget) {
-        return new GuardedChatResponse(requestId, "allow", message, null, trace, usage, budget);
+        return new GuardedChatResponse(requestId, "allow", message, null, trace, usage, budget, null, null);
     }
 
     public static GuardedChatResponse redact(
             String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace, BudgetUsage budget) {
-        return new GuardedChatResponse(requestId, "redact", message, null, trace, usage, budget);
+        return new GuardedChatResponse(requestId, "redact", message, null, trace, usage, budget, null, null);
     }
 
     public static GuardedChatResponse block(
             String requestId, String blockedBy, List<ControlTrace> trace, BudgetUsage budget) {
-        return new GuardedChatResponse(requestId, "block", null, blockedBy, trace, null, budget);
+        return new GuardedChatResponse(requestId, "block", null, blockedBy, trace, null, budget, null, null);
     }
 
     public static GuardedChatResponse block(String requestId, String blockedBy, List<ControlTrace> trace) {
         return block(requestId, blockedBy, trace, null);
+    }
+
+    /** Ta sama odpowiedź z oznaczeniem wersji polityki, która ją wyprodukowała. */
+    public GuardedChatResponse withPolicy(long version, String hash) {
+        return new GuardedChatResponse(requestId, action, message, blockedBy, trace, usage, budget, version, hash);
     }
 }

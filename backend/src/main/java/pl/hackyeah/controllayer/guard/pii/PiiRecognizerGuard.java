@@ -67,6 +67,11 @@ public class PiiRecognizerGuard implements Guard {
         return ID;
     }
 
+    /** Recognizery z paczki — do walidacji polityki i listy w UI (id, encja, domyślna akcja). */
+    public List<RecognizerPack.Recognizer> recognizers() {
+        return pack.recognizers();
+    }
+
     @Override
     public Set<Stage> stages() {
         return Set.of(Stage.INPUT, Stage.OUTPUT, Stage.TOOL_CALL);

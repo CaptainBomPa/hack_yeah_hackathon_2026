@@ -60,8 +60,8 @@ export interface GuardedChatResponse {
   usage: ChatUsage | null
   // rozszerzenia (kontrakt §5.1)
   budget?: ChatBudget | null // zużycie dziennego budżetu roli; brak = backend go jeszcze nie wysyłał
-  policyVersion?: string
-  policyHash?: string
+  policyVersion?: number | string | null // wersja polityki, która podjęła decyzję (GuardedChatResponse.java)
+  policyHash?: string | null
   status?: TechStatus
   latency?: { totalMs: number; upstreamMs?: number }
   shadow?: { policyVersion: string; action: GuardAction; blockedBy?: string | null }
@@ -93,6 +93,8 @@ export interface AuditEvent {
   usage: ChatUsage | null
   messageCount: number
   trace: ControlTrace[]
+  /** wersja polityki, która podjęła decyzję (null w rekordach sprzed wersjonowania polityk) */
+  policyVersion: number | null
   recordHash: string
 }
 
@@ -147,11 +149,44 @@ export interface DashboardData {
   budgets: { role: string; usedTokens: number; reservedTokens: number; cap: number | null }[]
 }
 
-export interface PolicyInfo {
-  version: string
+/** Polityka gatewaya — PolicyDocument.java. Źródło prawdy: tabela policy_version (docs/policy-management-plan.md). */
+export interface PolicyDocument {
+  /** rola konta → dozwolone modele ("*" = wszystkie) i dzienny limit tokenów (null = bez limitu) */
+  roles: Record<string, { models: string[]; dailyTokens: number | null }>
+  /** allowlista: które tagi z katalogu modeli są włączone */
+  models: { tag: string; enabled: boolean }[]
+  /** id guarda → włączony, kolejność, parametry */
+  guards: Record<string, { enabled: boolean; order: number; params: Record<string, unknown> }>
+  limits: { maxInputTokens: number; maxOutputTokens: number }
+}
+
+/** Z czego UI może wybierać przy edycji polityki (PolicyController.Catalog). */
+export interface PolicyCatalog {
+  models: { tag: string; baseUrl: string }[]
+  guards: { id: string; kind: string; stages: string[] }[]
+  piiRecognizers: { id: string; name: string; entity: string; defaultAction: string }[]
+  /** rola → liczba kont; roli z kontami nie da się usunąć */
+  roleAccounts: Record<string, number>
+}
+
+export interface PolicyVersionSummary {
+  version: number
   hash: string
-  updatedAt: string
-  raw: string // YAML polityki
+  author: string
+  source: 'seed' | 'ui' | 'import' | 'restore' | string
+  comment: string | null
+  createdAt: string
+}
+
+/** GET /api/policy — PolicyController.PolicyView. */
+export interface PolicyView extends PolicyVersionSummary {
+  document: PolicyDocument
+  catalog: PolicyCatalog
+}
+
+export interface PolicyError {
+  path: string
+  message: string
 }
 
 /** Zalogowany użytkownik — AuthController.CurrentUser (GET /api/auth/me). Role z backend/config/policy.yaml. */

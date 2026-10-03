@@ -61,6 +61,10 @@ public class AuditEvent implements Persistable<Long> {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String controls;
 
+    /** Wersja polityki, która podjęła decyzję (null w rekordach sprzed V6). */
+    @Column(name = "policy_version")
+    private Long policyVersion;
+
     @Column(name = "prev_hash", nullable = false, length = 64)
     private String prevHash;
 
@@ -86,6 +90,7 @@ public class AuditEvent implements Persistable<Long> {
         this.completionTokens = entry.completionTokens();
         this.messageCount = entry.messageCount();
         this.controls = controls;
+        this.policyVersion = entry.policyVersion();
         this.prevHash = prevHash;
         this.recordHash = recordHash;
     }
@@ -93,7 +98,7 @@ public class AuditEvent implements Persistable<Long> {
     /** Pola wchodzące do hasha, w stałej kolejności (bez samego `recordHash`). */
     AuditEntry toEntry() {
         return new AuditEntry(requestId, occurredAt, principal, role, sessionId, model, action, blockedBy,
-                httpStatus, latencyMs, promptTokens, completionTokens, messageCount, null);
+                httpStatus, latencyMs, promptTokens, completionTokens, messageCount, null, policyVersion);
     }
 
     public long getSeq() {
@@ -168,6 +173,10 @@ public class AuditEvent implements Persistable<Long> {
 
     public String getControls() {
         return controls;
+    }
+
+    public Long getPolicyVersion() {
+        return policyVersion;
     }
 
     public String getPrevHash() {

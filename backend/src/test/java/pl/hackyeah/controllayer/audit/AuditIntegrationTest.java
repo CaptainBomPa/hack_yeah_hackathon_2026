@@ -174,7 +174,7 @@ class AuditIntegrationTest {
         String requestId = UUID.randomUUID().toString();
         auditService.append(new AuditEntry(requestId, Instant.now(), "tester", "chat", sessionId, "test-model",
                 action, blockedBy, "block".equals(action) ? 403 : 200, 12, 3, 2, 1,
-                List.of(new ControlTrace("model.allowlist", "deterministic", action, 1, null))));
+                List.of(new ControlTrace("model.allowlist", "deterministic", action, 1, null)), 1L));
         return requestId;
     }
 

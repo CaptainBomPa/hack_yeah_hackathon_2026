@@ -39,12 +39,12 @@ export default function DecisionXray({ response, clientLatencyMs, userText }: Pr
           <dd className="truncate font-mono" title={response.requestId}>
             {response.requestId}
           </dd>
-          {response.policyVersion && (
+          {response.policyVersion != null && (
             <>
               <dt>policy</dt>
-              <dd className="font-mono">
-                {response.policyVersion}
-                {response.policyHash && ` · ${response.policyHash}`}
+              <dd className="font-mono" title={response.policyHash ?? undefined}>
+                v{response.policyVersion}
+                {response.policyHash && ` · ${response.policyHash.slice(0, 8)}`}
               </dd>
             </>
           )}

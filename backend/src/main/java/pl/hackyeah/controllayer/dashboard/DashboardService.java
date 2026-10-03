@@ -20,7 +20,7 @@ import pl.hackyeah.controllayer.audit.AuditEventRepository;
 import pl.hackyeah.controllayer.audit.AuditService;
 import pl.hackyeah.controllayer.budget.BudgetService;
 import pl.hackyeah.controllayer.chat.ControlTrace;
-import pl.hackyeah.controllayer.policy.PolicyProperties;
+import pl.hackyeah.controllayer.policy.PolicySource;
 
 /**
  * Metryki dashboardu liczone z audytu (VISION.md §6). Jedno zapytanie po rekordy okna czasowego
@@ -64,17 +64,17 @@ public class DashboardService {
     private final AuditEventRepository repository;
     private final AuditService auditService;
     private final BudgetService budgetService;
-    private final PolicyProperties policy;
+    private final PolicySource policy;
     private final Clock clock;
 
     @Autowired
     public DashboardService(AuditEventRepository repository, AuditService auditService,
-            BudgetService budgetService, PolicyProperties policy) {
+            BudgetService budgetService, PolicySource policy) {
         this(repository, auditService, budgetService, policy, Clock.systemUTC());
     }
 
     DashboardService(AuditEventRepository repository, AuditService auditService, BudgetService budgetService,
-            PolicyProperties policy, Clock clock) {
+            PolicySource policy, Clock clock) {
         this.repository = repository;
         this.auditService = auditService;
         this.budgetService = budgetService;
@@ -173,12 +173,11 @@ public class DashboardService {
                 budgets());
     }
 
-    /** Role z policy.yaml (z limitem albo bez) + role, które dziś coś zużyły. */
+    /** Role z aktywnej polityki (z limitem albo bez) + role, które dziś coś zużyły. */
     private List<DashboardView.RoleBudget> budgets() {
         var usage = budgetService.todayUsageByRole();
         var roles = new TreeMap<String, Long>();
-        policy.roles().forEach((role, rolePolicy) ->
-                roles.put(role, rolePolicy.budget() == null ? null : rolePolicy.budget().dailyTokens()));
+        policy.current().document().roles().forEach((role, rolePolicy) -> roles.put(role, rolePolicy.dailyTokens()));
         usage.keySet().forEach(role -> roles.putIfAbsent(role, null));
         return roles.entrySet().stream()
                 .map(r -> {

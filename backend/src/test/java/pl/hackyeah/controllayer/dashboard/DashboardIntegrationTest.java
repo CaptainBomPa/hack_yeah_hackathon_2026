@@ -104,7 +104,7 @@ class DashboardIntegrationTest {
             Integer completion, List<ControlTrace> trace) {
         auditService.append(new AuditEntry(UUID.randomUUID().toString(), Instant.now(), "dash-user", "chat",
                 "dash-session", model, action, blockedBy, "block".equals(action) ? 403 : 200, latencyMs,
-                prompt, completion, 1, trace));
+                prompt, completion, 1, trace, 1L));
     }
 
     private static ControlTrace trace(String policy, String action) {

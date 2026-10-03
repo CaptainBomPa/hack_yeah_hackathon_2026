@@ -33,7 +33,7 @@ function describeError(err: unknown): string {
 
 /** Rekord audytu w kształcie odpowiedzi czatu, żeby użyć tego samego X-ray co w Playground. */
 function asDecision(e: AuditEvent): GuardedChatResponse {
-  return { requestId: e.requestId, action: e.action, message: null, blockedBy: e.blockedBy, trace: e.trace, usage: e.usage }
+  return { requestId: e.requestId, action: e.action, message: null, blockedBy: e.blockedBy, trace: e.trace, usage: e.usage, policyVersion: e.policyVersion }
 }
 
 export default function AuditLogPage() {

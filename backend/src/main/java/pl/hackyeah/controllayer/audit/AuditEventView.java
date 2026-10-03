@@ -21,6 +21,7 @@ public record AuditEventView(
         Usage usage,
         int messageCount,
         List<ControlTrace> trace,
+        Long policyVersion,
         String recordHash) {
 
     static AuditEventView of(AuditEvent e, List<ControlTrace> trace) {
@@ -28,7 +29,7 @@ public record AuditEventView(
                 : new Usage(e.getPromptTokens(), e.getCompletionTokens() == null ? 0 : e.getCompletionTokens());
         return new AuditEventView(e.getSeq(), e.getRequestId(), e.getOccurredAt(), e.getPrincipal(), e.getRole(),
                 e.getSessionId(), e.getModel(), e.getAction(), e.getBlockedBy(), e.getHttpStatus(), e.getLatencyMs(),
-                usage, e.getMessageCount(), trace, e.getRecordHash());
+                usage, e.getMessageCount(), trace, e.getPolicyVersion(), e.getRecordHash());
     }
 
     /** Strona listy z kursorem keyset (`before=nextCursor` daje kolejną stronę). */

@@ -1,4 +1,4 @@
-import { AuthRequiredError, LoginError, type ChatParams } from './client'
+import { AuthRequiredError, LoginError, PolicyConflictError, PolicyInvalidError, type ChatParams } from './client'
 import { newId } from '../lib/id'
 import type {
   AuditEvent,
@@ -12,7 +12,11 @@ import type {
   DashboardWindow,
   GuardAction,
   GuardedChatResponse,
-  PolicyInfo,
+  PolicyCatalog,
+  PolicyDocument,
+  PolicyError,
+  PolicyVersionSummary,
+  PolicyView,
   TextSpan,
 } from './types'
 
@@ -29,7 +33,7 @@ function abortableDelay<T>(value: T, ms: number, signal?: AbortSignal): Promise<
 }
 
 const MOCK_MODELS = ['qwen2.5:1.5b-instruct-q4_K_M', 'qwen2.5:0.5b']
-const POLICY = { policyVersion: 'v3', policyHash: 'a1b2c3d' }
+const POLICY = { policyVersion: 1, policyHash: 'seedmock' }
 
 /** Symuluje rosnące dzienne zużycie budżetu (BudgetUsage.java) w trybie mock. */
 const MOCK_BUDGET_CAP = 20000
@@ -308,6 +312,7 @@ const MOCK_AUDIT: AuditEvent[] = Array.from({ length: 120 }, (_, i) => {
     usage: action === 'block' ? null : { promptTokens: 20 + (seq % 40), completionTokens: 30 + (seq % 90) },
     messageCount: 1 + (seq % 5),
     trace,
+    policyVersion: 1,
     recordHash: (seq * 2654435761).toString(16).padStart(64, 'a').slice(0, 64),
   }
 })
@@ -347,19 +352,76 @@ export function auditVerify(): Promise<AuditVerifyResult> {
   return delay({ valid: true, checked: MOCK_AUDIT.length, brokenAtSeq: null, reason: null })
 }
 
-let mockPolicy = `version: v3
-pii:
-  credit_card: { action: redact }
-  email: { action: redact }
-semantic:
-  jailbreak: { action: block, threshold: 0.8 }
-budget:
-  daily_cap_tokens: 100000
-`
+// --- polityka (tryb mock): wersje w pamięci, zachowanie jak PolicyStore.java ---
+const MOCK_CATALOG: PolicyCatalog = {
+  models: [
+    { tag: 'qwen2.5:0.5b', baseUrl: 'http://ollama:11434' },
+    { tag: 'qwen2.5:1.5b-instruct-q4_K_M', baseUrl: 'http://ollama:11434' },
+  ],
+  guards: [
+    { id: 'PII-RECOGNIZERS', kind: 'deterministic', stages: ['INPUT', 'OUTPUT', 'TOOL_CALL'] },
+    { id: 'SEM-001', kind: 'semantic', stages: ['INPUT'] },
+  ],
+  piiRecognizers: [
+    { id: 'PII-001', name: 'PESEL', entity: 'PL_PESEL', defaultAction: 'redact' },
+    { id: 'PII-002', name: 'Email', entity: 'EMAIL_ADDRESS', defaultAction: 'redact' },
+    { id: 'PII-007', name: 'Payment card', entity: 'CREDIT_CARD', defaultAction: 'redact' },
+  ],
+  roleAccounts: { admin: 1, chat: 3, agent: 2 },
+}
+const MOCK_SEED: PolicyDocument = {
+  roles: {
+    admin: { models: ['*'], dailyTokens: null },
+    agent: { models: ['qwen2.5:1.5b-instruct-q4_K_M'], dailyTokens: 100000 },
+    chat: { models: ['qwen2.5:0.5b', 'qwen2.5:1.5b-instruct-q4_K_M'], dailyTokens: 20000 },
+  },
+  models: MOCK_CATALOG.models.map((m) => ({ tag: m.tag, enabled: true })),
+  guards: {
+    'PII-RECOGNIZERS': { enabled: true, order: 100, params: { threshold: 0.5, blockRecognizers: [], monitorRecognizers: [], disabledRecognizers: [] } },
+    'SEM-001': { enabled: true, order: 200, params: { blockThreshold: 0.998, timeoutMs: 4000, failureMode: 'closed' } },
+  },
+  limits: { maxInputTokens: 4000, maxOutputTokens: 1024 },
+}
+const mockVersions: PolicyView[] = [
+  { version: 1, hash: 'seedmock', author: 'seed', source: 'seed', comment: 'initial policy', createdAt: new Date().toISOString(), document: MOCK_SEED, catalog: MOCK_CATALOG },
+]
+const latest = () => mockVersions[mockVersions.length - 1]
+const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T
 
-export function policy(raw?: string): Promise<PolicyInfo> {
-  if (raw !== undefined) mockPolicy = raw
-  return delay({ version: 'v3', hash: 'a1b2c3d', updatedAt: new Date().toISOString(), raw: mockPolicy })
+export function policy(): Promise<PolicyView> {
+  return delay(clone(latest()))
+}
+
+export function validatePolicy(document: PolicyDocument): Promise<{ valid: boolean; errors: PolicyError[] }> {
+  const errors: PolicyError[] = []
+  if (!document.roles.admin) errors.push({ path: 'roles', message: "role 'admin' is required" })
+  for (const [role, count] of Object.entries(MOCK_CATALOG.roleAccounts)) {
+    if (count > 0 && !document.roles[role]) errors.push({ path: `roles.${role}`, message: `role '${role}' is used by ${count} account(s)` })
+  }
+  return delay({ valid: errors.length === 0, errors }, 150)
+}
+
+export async function savePolicy(baseVersion: number, document: PolicyDocument, comment: string, source: string): Promise<PolicyView> {
+  if (baseVersion !== latest().version) throw new PolicyConflictError(latest().version)
+  const { errors } = await validatePolicy(document)
+  if (errors.length) throw new PolicyInvalidError(errors)
+  const next = { ...clone(latest()), version: latest().version + 1, hash: Math.random().toString(16).slice(2, 10), author: 'mock-admin', source, comment: comment || null, createdAt: new Date().toISOString(), document: clone(document) }
+  mockVersions.push(next)
+  return delay(clone(next))
+}
+
+export function policyVersions(): Promise<PolicyVersionSummary[]> {
+  return delay(mockVersions.map(({ document: _d, catalog: _c, ...summary }) => summary).reverse())
+}
+
+export function policyVersion(version: number): Promise<PolicyView> {
+  const found = mockVersions.find((v) => v.version === version)
+  return found ? delay(clone(found)) : Promise.reject(new Error('404'))
+}
+
+export async function restorePolicy(version: number): Promise<PolicyView> {
+  const found = await policyVersion(version)
+  return savePolicy(latest().version, found.document, `restored from version ${version}`, 'restore')
 }
 
 // --- logowanie (tryb mock): dowolne hasło; rola z prefiksu loginu (chat*/agent*), reszta = admin ---

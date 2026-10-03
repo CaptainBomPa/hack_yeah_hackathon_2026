@@ -36,7 +36,7 @@ zewnętrznych usług. Plan wynika z tych wymagań, a nie z ich dosłownego brzmi
 |---|---|---|
 | D1 | **Tożsamość maszyn: klucze API** w Postgres (hash SHA-256, prefiks, `revoked_at`). Klucz nie niesie uprawnień. | Działa offline, jury wchodzi bez konfiguracji, odwołanie bez restartu. |
 | D2 | **Tożsamość ludzi: konta lokalne** w Postgres (hasło BCrypt), logowanie formularzem, sesja w cookie. Bez Google i bez OAuth. | Zero-preparation dla jury; brak tunelu i redirectów. |
-| D3 | **Uprawnienia w jednej polityce `policy.yaml`** (sekcja `principals`): `allow`/`deny` dla modeli, narzędzi MCP i źródeł pamięci. Deny wygrywa, brak wpisu = odmowa. Hot reload. | Spełnia §4.1 (jedna konfiguracja) i §6 (jury zmienia config na żywo). |
+| D3 | **Uprawnienia w jednej polityce** (aktualizacja: źródłem prawdy jest tabela `policy_version` w bazie, edycja z UI — `docs/policy-management-plan.md`; `policy.yaml` to tylko seed wersji 1) (sekcja `principals`): `allow`/`deny` dla modeli, narzędzi MCP i źródeł pamięci. Deny wygrywa, brak wpisu = odmowa. Hot reload. | Spełnia §4.1 (jedna konfiguracja) i §6 (jury zmienia config na żywo). |
 | D4 | **Deployment: cały stack na Raspberry Pi** w jednej sieci docker. Klienci wchodzą przez adres Pi w sieci, w której stoi Pi. Tunel HTTPS opcjonalnie, tylko dla dostępu spoza tej sieci. | Brak tunelu jest możliwy, bo nie ma redirectów zewnętrznych. |
 | D5 | **Logowanie i klucze działają bez internetu.** Internet tylko dla zewnętrznych LLM-ów. | Zgodne z §7 i z VISION §1 (działanie bez płatnych usług). |
 | D6 | **Priorytet:** klucze API i `deny` w polityce najpierw. Formularz logowania i panel admina po nich. | Najwięcej punktów (Robustness, Self-Testing) zależy od blokowania ruchu. |
