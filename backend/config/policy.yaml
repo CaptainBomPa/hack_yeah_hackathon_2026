@@ -11,7 +11,7 @@ policy:
     mode: block
     requestsPerMinute: 30
     burstCapacity: 5
-    maxConcurrentPerUser: 2
+    maxConcurrentPerUser: 1
     maxConcurrentGlobal: 8
     pipelineTimeout: 120s
   roles:
