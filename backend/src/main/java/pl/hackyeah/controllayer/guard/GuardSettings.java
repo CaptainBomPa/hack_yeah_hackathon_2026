@@ -13,6 +13,10 @@ public record GuardSettings(boolean enabled, Map<String, Object> params) {
         return params.get(name) instanceof Number number ? number.doubleValue() : defaultValue;
     }
 
+    public String stringParam(String name, String defaultValue) {
+        return params.get(name) instanceof String text ? text : defaultValue;
+    }
+
     public int intParam(String name, int defaultValue) {
         return params.get(name) instanceof Number number ? number.intValue() : defaultValue;
     }

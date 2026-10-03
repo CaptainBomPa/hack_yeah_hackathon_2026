@@ -6,6 +6,7 @@ NIE jest uruchamiane automatycznie. Wymaga: pip install -e ".[eval]". Zbiory (li
   Lakera/gandalf_ignore_instructions          mit          ok. 0,2 MB  (same ataki)
   TrustAIRLab/in-the-wild-jailbreak-prompts   mit          ok. 18 MB   (konfiguracje 2023_12_25)
   jackhhao/jailbreak-classification           apache-2.0   ok. 46 MB   (CSV, kolumny zweryfikowane przy pobraniu)
+  neuralchemy/Prompt-injection-dataset        apache-2.0   ok. 2 MB    (konfiguracja "core", tylko validation+test)
 
 Pominięte celowo: walledai/JailbreakHub (te same dane co in-the-wild, duplikaty), xTRam1/safe-guard-prompt-injection
 (brak licencji w metadanych).
@@ -23,9 +24,12 @@ DATA = Path(__file__).resolve().parent / "data"
 
 
 def _row(source: str, idx: int, text: str, attack: bool, family: str) -> dict:
+    from evaluation.tagging import is_noisy
+
     return {
         "id": f"{source}-{idx:06d}", "checkpoint": "P1", "text": text, "source": source,
         "kind": "attack" if attack else "benign", "family": family if attack else "general",
+        "tags": ["noisy"] if is_noisy(text) else ["clean"],
     }
 
 
@@ -33,6 +37,32 @@ def _require(columns, needed: list[str], name: str) -> None:
     missing = [c for c in needed if c not in columns]
     if missing:
         raise SystemExit(f"{name}: brak oczekiwanych kolumn {missing}. Są: {list(columns)}")
+
+
+def neuralchemy() -> list[dict]:
+    """Tylko validation i test z konfiguracji `core` (oryginalne próbki, bez augmentacji). Train zostaje na douczanie.
+
+    Kategorie `indirect_injection` i `rag_poisoning` (ataki w dokumentach i mailach) trafiają do P2 z zaufaniem "document".
+    `edge_case` (niewinne, ale przypominające atak) to trudne negatywy. UWAGA: ok. 29% ataków ma szum (homoglify, leet,
+    losowa interpunkcja), a niewinne prawie nigdy (1%), więc zbiór premiuje wykrywanie szumu. Zob. evaluation/README.md.
+    """
+    from datasets import load_dataset
+
+    rows, i = [], 0
+    for split in ("validation", "test"):
+        ds = load_dataset("neuralchemy/Prompt-injection-dataset", "core", split=split)
+        _require(ds.column_names, ["text", "label", "category"], "neuralchemy")
+        for r in ds:
+            attack = bool(r["label"])
+            row = _row("neuralchemy", i, r["text"], attack, r["category"])
+            if attack and r["category"] in ("indirect_injection", "rag_poisoning"):
+                row["checkpoint"] = "P2"
+                row["context"] = {"source_trust": "document"}
+            if not attack:
+                row["kind"] = "hard_negative" if r["category"] == "edge_case" else "benign"
+                row["family"] = r["category"] if r["category"] != "benign" else "general"
+            rows.append(row); i += 1
+    return rows
 
 
 def deepset() -> list[dict]:
@@ -85,7 +115,7 @@ def jackhhao() -> list[dict]:
     return rows
 
 
-SOURCES = {"deepset": deepset, "lakera": lakera, "inthewild": in_the_wild, "jackhhao": jackhhao}
+SOURCES = {"deepset": deepset, "lakera": lakera, "inthewild": in_the_wild, "jackhhao": jackhhao, "neuralchemy": neuralchemy}
 
 
 def main() -> None:

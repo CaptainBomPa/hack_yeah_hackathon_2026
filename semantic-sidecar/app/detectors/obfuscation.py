@@ -4,7 +4,7 @@ To reguły, nie model. Wynik mówi "tekst jest zapisany tak, by utrudnić czytan
 służyć jako jeden z sygnałów w agregatorze. Wagi są konfigurowalne (`detectors.obfuscation.params.weights`).
 """
 
-from app.contract import Checkpoint, ClassifyRequest, Evidence, Finding
+from app.contract import Checkpoint, ClassifyRequest, Finding, RawEvidence
 from app.detectors.base import Detector
 from app.normalize import Normalized
 
@@ -31,6 +31,7 @@ class ObfuscationDetector(Detector):
     name = "obfuscation"
     version = "0.1.0"
     checkpoints = frozenset(Checkpoint)
+    requires_normalization_signals = True  # działa tylko w trybie samodzielnym (input.pre_normalized: false)
 
     def __init__(self, weights: dict[str, float] | None = None):
         self.weights = {**DEFAULT_WEIGHTS, **(weights or {})}
@@ -38,30 +39,30 @@ class ObfuscationDetector(Detector):
     def run(self, req: ClassifyRequest, norm: Normalized) -> Finding:
         s = norm.signals
         w = self.weights
-        found: list[tuple[float, str, Evidence | None]] = []
+        found: list[tuple[float, str, RawEvidence | None]] = []
 
-        def add(label: str, evidence: Evidence | None = None) -> None:
+        def add(label: str, evidence: RawEvidence | None = None) -> None:
             found.append((w[label], label, evidence))
 
         for seg in norm.decoded:
             if seg.kind == "unicode_tags":
-                add("unicode_tags", Evidence(text=_snippet(seg.text), variant="decoded"))
+                add("unicode_tags", RawEvidence(text=_snippet(seg.text), variant="decoded"))
         if s.max_decode_depth >= 2:
             add("nested_encoding")
         if s.homoglyph_words:
-            add("homoglyph", Evidence(text=_snippet(norm.normalized), variant="normalized"))
+            add("homoglyph", RawEvidence(text=_snippet(norm.normalized), variant="normalized"))
         if s.decode_limit_hit:
             add("decode_limit")
         if s.invisible_inside_words:
             add("invisible_in_word")
         for seg in norm.decoded:
             if seg.kind in ("base64", "hex", "rot13", "reversed", "url"):
-                add("encoded_text", Evidence(text=_snippet(seg.text), variant="decoded", span=seg.span))
+                add("encoded_text", RawEvidence(text=_snippet(seg.text), variant="decoded", span=seg.span))
                 break
         if s.spaced_runs:
-            add("spaced_letters", Evidence(text=_snippet(norm.deobfuscated or ""), variant="deobfuscated"))
+            add("spaced_letters", RawEvidence(text=_snippet(norm.deobfuscated or ""), variant="deobfuscated"))
         if s.leet_tokens >= 2:
-            add("leet", Evidence(text=_snippet(norm.deobfuscated or ""), variant="deobfuscated"))
+            add("leet", RawEvidence(text=_snippet(norm.deobfuscated or ""), variant="deobfuscated"))
         if s.hidden_markup:
             add("hidden_markup")
         if s.html_entities >= 3:

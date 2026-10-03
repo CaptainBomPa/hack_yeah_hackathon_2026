@@ -16,6 +16,14 @@ public interface Guard {
     /** Etapy, na których guard działa. */
     Set<Stage> stages();
 
+    /**
+     * Rodzaj kontroli w `ControlTrace.kind`: "deterministic" (domyślnie) albo "semantic" dla guardów,
+     * które pytają model/provider semantyczny (np. SEM-001).
+     */
+    default String kind() {
+        return "deterministic";
+    }
+
     /** Sprawdza `ctx.text()`. Wyjątek jest traktowany jak {@link Verdict.Block} (fail-closed). */
     Verdict check(GuardContext ctx, GuardSettings settings);
 }

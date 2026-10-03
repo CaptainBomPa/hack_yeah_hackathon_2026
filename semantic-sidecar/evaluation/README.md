@@ -36,16 +36,37 @@ z niego są wstępne. Brakuje m.in. scenariuszy wielotur (wymagają sesji) i dan
 
 ## Zbiory publiczne
 
-`python -m evaluation.fetch_public` pobiera je do `data/` (katalog w `.gitignore`). Zbiory i licencje są opisane w
-nagłówku skryptu. **Skrypt nie został jeszcze uruchomiony.** Pobrane pliki są w tym samym formacie, więc runner
-je wczytuje automatycznie. Do P1 (publiczne zbiory nie mają P2-P5). `--max-per-source N` ogranicza ich udział, żeby
-nie zdominowały ręcznych przypadków.
+`python -m evaluation.fetch_public` pobiera je do `data/` (katalog w `.gitignore`). Pliki są w tym samym formacie, więc
+runner wczytuje je automatycznie. `--max-per-source N` ogranicza ich udział, żeby nie zdominowały ręcznych przypadków.
+
+| Zbiór | Status | Uwagi |
+|---|---|---|
+| `neuralchemy/Prompt-injection-dataset` (Apache-2.0) | **pobrany** (1883 przypadki: validation+test z `core`, ok. 0,6 MB) | patrz niżej |
+| `deepset`, `Lakera/gandalf`, `in-the-wild`, `jackhhao` | skrypt gotowy, **nie pobrane** | czekają na decyzję |
+| `microsoft/llmail-inject-challenge` | **odrzucony** | zbyt duży |
+
+### Uwaga o `neuralchemy`: zbiór premiuje wykrywanie szumu
+
+Zmierzone na pobranych danych: **29% ataków ma szum** (homoglify, leet, znaki nieASCII, losowa interpunkcja typu
+` _ `), a **tylko 1% niewinnych promptów**. Szum jest więc silnym, fałszywym predyktorem „to atak". Autor opisuje
+zbiór jako „high quality, leakage-free", ale tej obserwacji tam nie ma. Konsekwencje:
+
+- Wynik detektora na tym zbiorze trzeba **rozbijać na ataki zaszumione i czyste**. Wynik zbiorczy myli.
+- Dla detektora `obfuscation` (v0.1): recall **55%** na zaszumionych atakach (177/320), **1,8%** na czystych (14/766),
+  fałszywe alarmy 0,4% (3/797). Detektor łapie szum, a nie ataki, co zgadza się z jego przeznaczeniem.
+- Klasyfikator douczany na tym zbiorze nauczy się szumu. Do treningu trzeba szum wyrównać (zaszumić też niewinne
+  prompty albo oczyścić ataki).
+- W held-out splitach (validation+test) jest tylko 1 przypadek `indirect_injection` i 10 `rag_poisoning`, więc zbiór
+  **nie pokrywa P2**, mimo opisu w README zbioru. `rag_poisoning` i `indirect_injection` trafiają do P2 (11 przypadków).
+- `edge_case` (20 przypadków) to trudne negatywy. Reszta niewinnych (777) to czyste, zwykłe prompty.
+
+Nie czytałem całego zbioru, tylko próbki z 8 kategorii i statystyki. Ostatecznej oceny jakości etykiet nie mam.
 
 ## Runner
 
 ```bash
 python -m evaluation.run --inprocess                    # bez serwera
-python -m evaluation.run --url http://localhost:8100    # przeciw żywemu sidecarowi
+python -m evaluation.run --url http://localhost:8001    # przeciw żywemu sidecarowi
 python -m evaluation.run --checkpoint P1 --threshold 0.5 --target-fpr 0.01 --json report.json
 ```
 

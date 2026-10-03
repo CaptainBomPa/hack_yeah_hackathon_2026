@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from evaluation.cases import Case
 
-ALL = "max(all)"  # pseudo-detektor: maksimum wyników wszystkich detektorów
+ALL = "max(wszystkie włączone)"  # pseudo-detektor: maksimum wyników. Tylko na życzenie (--ensemble-max)
 
 
 @dataclass
@@ -84,6 +84,19 @@ def detector_report(rows: list[tuple[Case, float | None, str, float]], threshold
     for c, s in attacks:
         fam[c.family].append(s)
 
+    tags: dict[str, dict[str, list[float]]] = defaultdict(lambda: {"attack": [], "neg": []})
+    for c, sc in scored:
+        for t in c.tags:
+            tags[t]["attack" if c.is_attack else "neg"].append(sc)
+
+    def tag_stats(v: dict) -> dict:
+        return {
+            "recall": (sum(1 for x in v["attack"] if x >= threshold) / len(v["attack"])) if v["attack"] else None,
+            "n_attack": len(v["attack"]),
+            "fpr": (sum(1 for x in v["neg"] if x >= threshold) / len(v["neg"])) if v["neg"] else None,
+            "n_negative": len(v["neg"]),
+        }
+
     lat = [l for _, _, _, l in rows]
     return {
         "n_attack": n_a, "n_negative": n_n, "n_hard_negative": n_h, "failures": failures,
@@ -97,13 +110,14 @@ def detector_report(rows: list[tuple[Case, float | None, str, float]], threshold
         "recall_at_target_fpr": tp_t / n_a if n_a else None,
         "achieved_fpr_at_target": fp_t / n_n if n_n else None,
         "recall_by_family": {f: {"recall": sum(1 for s in v if s >= threshold) / len(v), "n": len(v)} for f, v in sorted(fam.items())},
+        "by_tag": {t: tag_stats(v) for t, v in sorted(tags.items())},
         "missed_attacks": [c.id for c, s in sorted(attacks, key=lambda x: x[1]) if s < threshold][:8],
         "false_positives": [c.id for c, s in sorted(negs, key=lambda x: -x[1]) if s >= threshold][:8],
         "latency_ms": {"p50": percentile(lat, 0.5), "p95": percentile(lat, 0.95)},
     }
 
 
-def build_report(observations: list[Observation], threshold: float = 0.5, target_fpr: float = 0.01) -> dict:
+def build_report(observations: list[Observation], threshold: float = 0.5, target_fpr: float = 0.01, include_max: bool = False) -> dict:
     per_det: dict[str, list[tuple[Case, float | None, str, float]]] = defaultdict(list)
     per_case_scores: dict[str, tuple[Case, list[float]]] = {}
     transport_errors = 0
@@ -118,7 +132,7 @@ def build_report(observations: list[Observation], threshold: float = 0.5, target
             if ok:
                 per_case_scores.setdefault(ob.case.id, (ob.case, []))[1].append(r["score"])
 
-    if len(per_det) > 1:
+    if include_max and len(per_det) > 1:
         per_det[ALL] = [(c, max(sc), "ok", 0.0) for c, sc in per_case_scores.values()]
 
     total = [ob.total_ms for ob in observations if ob.response is not None]

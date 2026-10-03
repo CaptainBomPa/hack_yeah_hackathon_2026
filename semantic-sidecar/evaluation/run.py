@@ -2,7 +2,7 @@
 
 Przykłady (z katalogu semantic-sidecar):
     python -m evaluation.run --inprocess
-    python -m evaluation.run --url http://localhost:8100 --json report.json
+    python -m evaluation.run --url http://localhost:8001 --json report.json
 """
 
 import argparse
@@ -14,6 +14,8 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from app.config import NormalizationConfig
+from app.normalize import normalize
 from evaluation.cases import Case, load_cases
 from evaluation.metrics import Observation, build_report
 
@@ -21,8 +23,15 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_PATHS = [ROOT / "cases", ROOT / "data"]
 
 
-def _payload(case: Case) -> dict:
-    return {"checkpoint": case.checkpoint.value, "text": case.text, "context": case.context.model_dump()}
+def _payload(case: Case, normalize_input: bool = False) -> dict:
+    """Sidecar zakłada tekst znormalizowany (ustalenie z zespołem). Do czasu, gdy normalizuje gateway w Javie, runner
+    udaje go referencyjnym normalizatorem z `app/normalize/`. Wysyłamy tylko wersję `normalized` (Unicode, znaki
+    niewidoczne, homoglify, encje). Odkodowane segmenty (base64 itd.) NIE są wysyłane: kontrakt dla wariantów jest
+    jeszcze nieustalony, więc ataki zakodowane będą w wynikach widoczne jako chybione."""
+    text = case.text
+    if normalize_input:
+        text = normalize(text, case.checkpoint, NormalizationConfig()).normalized
+    return {"checkpoint": case.checkpoint.value, "text": text, "context": case.context.model_dump()}
 
 
 def sample_per_source(cases: list[Case], limit: int | None, seed: int) -> list[Case]:
@@ -39,11 +48,11 @@ def sample_per_source(cases: list[Case], limit: int | None, seed: int) -> list[C
     return out
 
 
-def run_cases(cases: list[Case], send, workers: int = 1) -> list[Observation]:
+def run_cases(cases: list[Case], send, workers: int = 1, normalize_input: bool = False) -> list[Observation]:
     def one(case: Case) -> Observation:
         start = time.perf_counter()
         try:
-            resp = send(_payload(case))
+            resp = send(_payload(case, normalize_input))
             return Observation(case, resp, (time.perf_counter() - start) * 1000)
         except Exception as exc:  # błąd transportu nie przerywa całego przebiegu
             return Observation(case, None, (time.perf_counter() - start) * 1000, error=str(exc))
@@ -76,6 +85,8 @@ def print_report(report: dict, cases: list[Case]) -> None:
         print(f"  precyzja {_fmt(d['precision'], True)}   AUROC {_fmt(d['auroc'])}")
         print(f"  przy FPR<={d['target_fpr']*100:.1f}%: próg {_fmt(d['threshold_at_target_fpr'])}, recall {_fmt(d['recall_at_target_fpr'], True)} (osiągnięty FPR {_fmt(d['achieved_fpr_at_target'], True)})")
         print(f"  latencja detektora p50={_fmt(d['latency_ms']['p50'])} ms, p95={_fmt(d['latency_ms']['p95'])} ms")
+        if d["by_tag"]:
+            print("  per tag: " + ", ".join(f"{t}: recall {_fmt(v['recall'], True)} (n={v['n_attack']}), FPR {_fmt(v['fpr'], True)} (n={v['n_negative']})" for t, v in d["by_tag"].items()))
         print("  recall per rodzina: " + ", ".join(f"{f} {v['recall']*100:.0f}% (n={v['n']})" for f, v in d["recall_by_family"].items()))
         if d["missed_attacks"]:
             print("  chybione ataki: " + ", ".join(d["missed_attacks"]))
@@ -85,13 +96,16 @@ def print_report(report: dict, cases: list[Case]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--url", default="http://localhost:8100", help="adres sidecara")
+    ap.add_argument("--url", default="http://localhost:8001", help="adres sidecara")
+    ap.add_argument("--no-normalize", action="store_true", help="nie normalizuj tekstu przed wysłaniem (tryb samodzielny sidecara)")
     ap.add_argument("--inprocess", action="store_true", help="uruchom aplikację w procesie, bez serwera")
     ap.add_argument("--cases", type=Path, nargs="*", default=DEFAULT_PATHS, help="pliki lub katalogi z przypadkami")
     ap.add_argument("--checkpoint", help="tylko ten punkt kontroli, np. P1")
+    ap.add_argument("--config", type=Path, help="plik konfiguracji sidecara dla --inprocess (np. config/semantic.models.yaml)")
     ap.add_argument("--max-per-source", type=int, help="limit przypadków z jednego publicznego źródła")
     ap.add_argument("--threshold", type=float, default=0.5)
     ap.add_argument("--target-fpr", type=float, default=0.01)
+    ap.add_argument("--ensemble-max", action="store_true", help="dodaj pseudo-detektor max() wszystkich włączonych (liczony tylko na przypadkach, które dostały choć jeden wynik)")
     ap.add_argument("--workers", type=int, default=4, help="równoległość w trybie HTTP")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--json", type=Path, help="zapisz raport do pliku")
@@ -109,9 +123,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.inprocess:
         from fastapi.testclient import TestClient
 
-        from app.main import app
+        from app.main import app, create_app
 
-        client = TestClient(app)
+        client = TestClient(create_app(config_path=args.config) if args.config else app)
         send = lambda payload: _post(client, payload)
         workers = 1
     else:
@@ -121,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         send = lambda payload: _post(client, payload)
         workers = args.workers
 
-    report = build_report(run_cases(cases, send, workers), args.threshold, args.target_fpr)
+    report = build_report(run_cases(cases, send, workers, normalize_input=not args.no_normalize), args.threshold, args.target_fpr, include_max=args.ensemble_max)
     print_report(report, cases)
     if args.json:
         args.json.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")

@@ -35,7 +35,8 @@ def client(detectors: dict[str, Detector], enabled: list[str], max_chars: int = 
 
 def test_health_and_empty_pipeline():
     c = client({}, [])
-    assert c.get("/health").json() == {"status": "ok", "detectors": []}
+    h = c.get("/health").json()
+    assert h["status"] == "ok" and h["detectors"] == [] and h["pre_normalized"] is True and h["details"] == []
     r = c.post("/classify", json={"checkpoint": "P1", "text": "hello"})
     assert r.status_code == 200
     assert r.json()["checkpoint"] == "P1" and r.json()["results"] == []

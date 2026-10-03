@@ -1,9 +1,30 @@
 # Konfiguracja sidecara semantycznego (dane, nie kod).
 # Nieznana nazwa w `detectors` przerywa start.
 
+# Kontrakt wejścia. true = gateway wysyła tekst już znormalizowany (ustalenie z zespołem), sidecar go nie rusza.
+# false = tryb samodzielny: sidecar normalizuje sam (referencyjna implementacja w app/normalize/, do demo i ewaluacji).
+input:
+  pre_normalized: true
+
 limits:
   max_input_chars: 20000
 
+# Limity czasu. To założenia do zmierzenia na docelowym sprzęcie, nie wyniki pomiaru.
+# Po przekroczeniu detektor dostaje status timeout i trafia do `missing_checks`, a gateway decyduje, co dalej.
+deadlines:
+  request_deadline_ms: 2000
+  normalization_timeout_ms: 500
+  detector_timeout_ms: 1000
+  max_workers: 8
+
+# Dowody (evidence) nie zawierają treści, bo fragment może być sekretem odkodowanym z base64.
+# W odpowiedzi jest tylko zakres, wariant, długość i skrót HMAC. Klucz HMAC ustaw w zmiennej środowiskowej,
+# inaczej skróty są losowe i zmieniają się po restarcie.
+evidence:
+  include_preview: false        # true = dodatkowo zamaskowany podgląd (po 2 pierwsze znaki każdego słowa)
+  digest_key_env: SEMANTIC_EVIDENCE_KEY
+
+# Normalizacja działa tylko w trybie samodzielnym (input.pre_normalized: false).
 # Normalizacja przed klasyfikacją. Każdy etap można wyłączyć. Limity chronią przed "bombami dekompresyjnymi".
 normalization:
   enabled: true
@@ -22,8 +43,11 @@ normalization:
     spaced: true
     markup: true
 
-detectors:
-  obfuscation:
-    enabled: true
-    # params:
-    #   weights: {leet: 0.5}   # nadpisanie wag poszczególnych sygnałów
+# Na razie brak detektorów AI. `obfuscation` to reguły oparte na sygnałach normalizacji, więc działa tylko w trybie
+# samodzielnym i nie może być włączony przy input.pre_normalized: true (sidecar odmówi startu).
+detectors: {}
+# detectors:
+#   obfuscation:
+#     enabled: true      # wymaga input.pre_normalized: false
+#     params:
+#       weights: {leet: 0.5}

@@ -78,14 +78,14 @@ public class GuardChain {
             long latencyMs = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
 
             switch (verdict) {
-                case Verdict.Allow ignored -> trace.add(trace(id, Action.ALLOW, latencyMs, null));
+                case Verdict.Allow allow -> trace.add(trace(entry.guard().kind(), id, Action.ALLOW, latencyMs, allow.detail()));
                 case Verdict.Redact redact -> {
                     current = current.withText(redact.newText());
                     action = Action.REDACT;
-                    trace.add(trace(id, Action.REDACT, latencyMs, redact.detail()));
+                    trace.add(trace(entry.guard().kind(), id, Action.REDACT, latencyMs, redact.detail()));
                 }
                 case Verdict.Block block -> {
-                    trace.add(trace(id, Action.BLOCK, latencyMs, block.reason()));
+                    trace.add(trace(entry.guard().kind(), id, Action.BLOCK, latencyMs, block.reason()));
                     return new GuardChainResult(Action.BLOCK, current.text(), id, trace);
                 }
             }
@@ -93,7 +93,7 @@ public class GuardChain {
         return new GuardChainResult(action, current.text(), null, trace);
     }
 
-    private static ControlTrace trace(String id, Action action, long latencyMs, String detail) {
-        return new ControlTrace(id, "deterministic", action.wire(), latencyMs, detail);
+    private static ControlTrace trace(String kind, String id, Action action, long latencyMs, String detail) {
+        return new ControlTrace(id, kind, action.wire(), latencyMs, detail);
     }
 }

@@ -20,6 +20,7 @@ class Case(BaseModel):
     family: str = "general"
     context: Context = Field(default_factory=Context)
     source: str = "own"
+    tags: list[str] = Field(default_factory=list)
 
     @property
     def is_attack(self) -> bool:

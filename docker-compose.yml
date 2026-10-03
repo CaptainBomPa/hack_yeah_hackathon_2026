@@ -1,8 +1,10 @@
 # docker-compose dla hackathonu — docelowo wdrażany w całości na Raspberry Pi (backend razem
-# z Ollamą w jednej sieci docker, VISION.md §2). db + backend + ollama działają (backend
-# w profilu prod). Frontend nie ma jeszcze Dockerfile'a, sidecar semantyczny jeszcze nie istnieje.
+# z Ollamą w jednej sieci docker, VISION.md §2). db + backend + ollama + sidecar semantyczny działają
+# (backend w profilu prod). Frontend nie ma jeszcze Dockerfile'a.
 # Katalog dozwolonych modeli (allowlista) żyje w backend/src/main/resources/application.yml
 # (`control-layer.models`) — modele pulluje `ollama-init` poniżej; muszą się zgadzać.
+# Sidecar semantyczny (semantic-sidecar/) jest opcjonalnym providerem analizy semantycznej (VISION.md §2).
+# Backend woła go z guarda SEM-001 (SIDECAR_BASE_URL=http://semantic-sidecar:8001, SEMANTIC_GUARD_ENABLED).
 
 services:
   db:
@@ -32,6 +34,9 @@ services:
       SPRING_DATASOURCE_USERNAME: hackyeah
       SPRING_DATASOURCE_PASSWORD: hackyeah
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      # Kontrola semantyczna (guard SEM-001) przez sidecar. Fail-closed: bez zdrowego sidecara backend blokuje żądania.
+      SIDECAR_BASE_URL: http://semantic-sidecar:8001
+      SEMANTIC_GUARD_ENABLED: ${SEMANTIC_GUARD_ENABLED:-true}
       # Klucz łańcucha HMAC audytu (docs/deterministic/27-audit-logging.md); w prod ustawić własny.
       CONTROL_LAYER_AUDIT_CHAIN_KEY: ${AUDIT_CHAIN_KEY:-change-me-audit-chain-key}
     ports:
@@ -44,6 +49,8 @@ services:
       db:
         condition: service_healthy
       ollama:
+        condition: service_healthy
+      semantic-sidecar:
         condition: service_healthy
 
   frontend:
@@ -80,6 +87,43 @@ services:
     # Musi pullować dokładnie te tagi, które są w allowliście (control-layer.models).
     entrypoint: ["/bin/sh", "-c", "ollama pull qwen2.5:1.5b-instruct-q4_K_M && ollama pull qwen2.5:0.5b"]
 
+  # Sidecar semantyczny (semantic-sidecar/README.md). Wagi modeli pobiera semantic-sidecar-init do wolumenu
+  # sidecar_models. Pierwszy start wymaga internetu (Hugging Face); kolejne działają offline.
+  semantic-sidecar-init:
+    build:
+      context: ./semantic-sidecar
+    restart: "no"
+    command: ["python", "-m", "scripts.fetch_models", "--if-missing", "--only", "injection_classifier_protectai"]
+    volumes:
+      - sidecar_models:/app/models
+
+  semantic-sidecar:
+    build:
+      context: ./semantic-sidecar
+    restart: unless-stopped
+    environment:
+      # Klucz HMAC skrótów dowodów (bez niego skróty są losowe i zmieniają się po restarcie); w prod ustawić własny.
+      SEMANTIC_EVIDENCE_KEY: ${SEMANTIC_EVIDENCE_KEY:-change-me-evidence-key}
+      # Liczba wątków PyTorcha. Na Raspberry Pi współdzielonym z Ollamą warto ograniczyć.
+      OMP_NUM_THREADS: ${SIDECAR_THREADS:-4}
+    ports:
+      - "8001:8001"
+    volumes:
+      # Konfiguracja i kalibracja z hosta (jak backend/config): jury może zmieniać progi bez przebudowy obrazu.
+      # Zmiana wymaga restartu sidecara (hot-reload jeszcze nie istnieje).
+      - ./semantic-sidecar/config:/app/config:ro
+      - sidecar_models:/app/models
+    depends_on:
+      semantic-sidecar-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+
 volumes:
   db_data:
   ollama_data:
+  sidecar_models:
