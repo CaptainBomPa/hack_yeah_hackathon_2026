@@ -65,9 +65,67 @@ UI jest na http://localhost:3000. Gotowość modeli przy pierwszym uruchomieniu 
 przez `docker compose logs --tail 20 ollama-init` (kończy się sukcesem).
 
 `POST /v1/chat/completions` woła skonfigurowany model (`{model, messages}` na wejściu,
-`GuardedChatResponse` na wyjściu — kontrakt w `frontend/src/api/types.ts`). Dziś jedyną realną
-kontrolą w `trace` jest allowlista modeli (`control-layer.models` w `application.yml`); reszta
-decision pipeline z `VISION.md` §9 jeszcze nie istnieje. Model trzeba najpierw dopisać do tej
-listy, inaczej dostaniesz `403 model.allowlist`. Adres providera: `OLLAMA_BASE_URL`
-(domyślnie `http://localhost:11434` — nadpisywane w `docker-compose.yml` na `http://ollama:11434`
-dla wdrożenia na Raspberry Pi).
+`GuardedChatResponse` na wyjściu — kontrakt w `frontend/src/api/types.ts`). Model trzeba najpierw
+dopisać do allowlisty (`control-layer.models` w `application.yml`), inaczej dostaniesz
+`403 model.allowlist`. Adres providera: `OLLAMA_BASE_URL` (domyślnie `http://localhost:11434` —
+nadpisywane w `docker-compose.yml` na `http://ollama:11434` dla wdrożenia na Raspberry Pi).
+
+## Self-testing suite
+
+Kontrole (guardy) mają dwa poziomy testów, oba odpalają się tą samą komendą:
+
+| Poziom | Co sprawdza | Przykład |
+|---|---|---|
+| Testy jednostkowe JUnit | logikę jednego guarda w izolacji (regexy, progi, walidatory) | `PiiRecognizerGuardTest`, `SemanticGuardTest` |
+| **Scenariusze BDD (Cucumber)** | cały pipeline end-to-end: polityka → user → prompt → odpowiedź | `src/test/resources/features/*.feature` |
+
+Scenariusze BDD są pisane w Gherkin (Given/When/Then), czytelne bez znajomości Javy:
+
+```gherkin
+Scenario: The model "tries to help" by pasting a payment card number into its answer — it gets redacted
+  Given the model responds with "Your card is 4111 1111 1111 1111, valid through 12/27"
+  When the user sends the prompt "What card number do you have on file for me?"
+  Then the response action is "redact"
+  And the response does not contain "4111 1111 1111 1111"
+```
+
+Kroki Given/When/Then i nazwy metod w `src/test/java/.../chat/bdd/` są po angielsku (tak jak
+reszta identyfikatorów w kodzie) — polskie są tylko komentarze/dokumentacja projektu, zgodnie
+z resztą repo.
+
+Pod spodem: prawdziwy `ChatCompletionController` z prawdziwym `GuardChain`/`BudgetGate`, a model
+i sidecar semantyczny to lekkie atrapy HTTP (`com.sun.net.httpserver.HttpServer`) sterowane
+krokami `Given` — żadnego Dockera, żadnej prawdziwej Ollamy. To samo podejście, co w
+`ChatCompletionControllerTest`/`SemanticGuardControllerTest`, tylko opakowane w język scenariusza.
+
+### Jak odpalić
+
+```bash
+./gradlew test                                               # wszystko, w tym BDD
+./gradlew test --tests "*.bdd.CucumberSuite"                 # tylko scenariusze BDD
+./gradlew test -Dcucumber.filter.tags="@budget"               # tylko jedna kategoria (gdy dodacie tagi)
+```
+
+### Jak zobaczyć wynik ładnie, nie w konsoli
+
+Po `./gradlew test` powstają dwa raporty:
+
+1. **Zawsze działa, zero instalacji**: `build/reports/cucumber/report.html` — otwórz w przeglądarce.
+2. **Ładniejszy, jeśli masz zainstalowane [Allure CLI](https://allurereport.org/docs/install/)**
+   (`brew install allure` / `scoop install allure` — Gradle plugin `io.qameta.allure` jest
+   dziś niekompatybilny z Gradle 9.x, więc generujemy raport przez CLI, nie przez
+   `./gradlew allureReport`):
+   ```bash
+   allure serve build/allure-results
+   ```
+
+### Gdzie dopisać kolejny guard
+
+1. Nowy plik `.feature` w `src/test/resources/features/` (albo nowy `Scenario` w istniejącym) —
+   `Given`/`When`/`Then` po polsku, nie trzeba znać Javy.
+2. Jeśli potrzebujesz nowego kroku (np. sterowania nowym zewnętrznym komponentem), dodaj metodę
+   `@Given`/`@When`/`@Then` w jednej z klas w `src/test/java/.../chat/bdd/` — żeby zamockować
+   kolejny serwis HTTP, skopiuj wzorzec `FakeHttpService` (dokładnie ten, którego już używają
+   atrapy modelu i sidecara).
+3. Logikę samego guarda testuj dodatkowo zwykłym testem JUnit (szybsza pętla feedbacku przy
+   dopracowywaniu regexów/progów) — BDD sprawdza integrację, nie zastępuje testu jednostkowego.

@@ -19,6 +19,7 @@ repositories {
 
 ext {
 	set('springCloudVersion', '2025.1.3')
+	set('cucumberVersion', '7.20.1')
 }
 
 dependencies {
@@ -38,6 +39,15 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
 	testImplementation 'io.projectreactor:reactor-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	// Self-testing suite (CRITERIA: "positive and negative cases for the controls"), docs/testing/README.md.
+	// Cucumber odpala się jako silnik JUnit Platform — ten sam `./gradlew test`, żadnego osobnego runnera.
+	testImplementation 'org.junit.platform:junit-platform-suite'
+	testImplementation platform("io.cucumber:cucumber-bom:${cucumberVersion}")
+	testImplementation 'io.cucumber:cucumber-java'
+	testImplementation 'io.cucumber:cucumber-junit-platform-engine'
+	testImplementation 'io.cucumber:cucumber-picocontainer'
+	testImplementation 'io.qameta.allure:allure-cucumber7-jvm:2.29.1'
 }
 
 dependencyManagement {
@@ -48,6 +58,11 @@ dependencyManagement {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// Gdzie adapter Allure (allure-cucumber7-jvm) zapisuje wyniki — jawnie, bez pluginu Gradle
+	// `io.qameta.allure` (niekompatybilny z Gradle 9.x: https://github.com/allure-framework/allure-gradle/issues,
+	// błąd `DefaultDecoratedConvention` przy tworzeniu zadania `allureReport`). Raport generuje się
+	// przez standalone CLI, zob. backend/README.md "Self-testing suite".
+	systemProperty 'allure.results.directory', "${layout.buildDirectory.get().asFile}/allure-results"
 }
 
 // Stawia Postgresa z docker-compose.yml i czeka, aż będzie healthy.
