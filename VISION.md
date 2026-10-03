@@ -18,6 +18,9 @@ model działa w Ollamie na Raspberry Pi; sam model nie implementuje guardraili.
 
 MVP musi:
 
+- wpuszczać do gatewaya wyłącznie zidentyfikowanych callerów: klucze API dla agentów i runnera
+  oraz lokalne konta dla czatu i admina; uprawnienia do modeli, narzędzi i pamięci wynikają z
+  `policy.yaml` (szczegóły: [`docs/auth/`](docs/auth/));
 - nie wiązać decision pipeline z jednym dostawcą analizy semantycznej;
 - łączyć szybkie kontrole deterministyczne w Javie z analizą semantyczną dostarczaną przez
   wymienny provider;
@@ -49,6 +52,8 @@ korzystać z zewnętrznego API, jeśli daje ono najlepszą jakość i przewidywa
   +--> [Semantic provider: zewnętrzne API lub lokalny sidecar]
   +--> [PostgreSQL: polityki, audyt, budżety]
   +--> [Ollama na Raspberry Pi: chroniony LLM]
+  +--> [Zewnętrzne LLM-y: klucze z env, budżet tokenów]
+  +--> [Tożsamość: lokalne konta (czat, admin) i klucze API (agenci); uprawnienia w policy.yaml]
 ```
 
 Java jest właścicielem orkiestracji, polityk i ostatecznej decyzji. Javowy interfejs providera
@@ -56,6 +61,12 @@ oddziela decision pipeline od konkretnego modelu lub usługi. Implementacja moż
 zewnętrzne API albo opcjonalny lokalny sidecar Python/FastAPI, gdy uzasadnia to ekosystem ML.
 Awaria providera nie może omijać kontroli, a jego wymiana nie może zmieniać kontraktu
 `ControlResult`.
+
+Wdrożenie docelowe: cały stack (gateway, PostgreSQL, sidecar, statyczny frontend i Ollama) działa
+na Raspberry Pi. Rozwój odbywa się lokalnie na profilu `local`. Klienci zespołu i jury wchodzą
+przez adres Pi w sieci, w której stoi Pi. Logowanie i klucze API nie wymagają internetu. Tunel
+HTTPS jest opcjonalny, tylko dla dostępu spoza tej sieci. Na Pi publikujemy wyłącznie gateway,
+nigdy bazy ani Ollamy.
 
 Spring Cloud Gateway jest reaktywny, natomiast obecna persistencja JPA/JDBC jest blokująca.
 Operacje bazodanowe nie mogą wykonywać się na event loopie WebFlux: należy izolować je na
@@ -71,6 +82,7 @@ Operacje bazodanowe nie mogą wykonywać się na event loopie WebFlux: należy i
 | Chroniony model | Ollama na Raspberry Pi; bazowy model `qwen2.5:1.5b-instruct-q4_K_M` |
 | Frontend | React 18, TypeScript, Vite, Tailwind, Recharts |
 | Uruchomienie | Docker Compose; docelowo backend + Ollama razem na Raspberry Pi (jedna sieć docker, §10); `OLLAMA_BASE_URL` nadpisuje adres dla lokalnego dev |
+| Autentykacja | Spring Security (reactive). Ludzie: lokalne konta w PostgreSQL (BCrypt), formularz i sesja w cookie. Maszyny: klucze API z hashem w bazie. Uprawnienia do modeli, narzędzi i pamięci: `policy.yaml`. Szczegóły: [`docs/auth/`](docs/auth/) |
 
 Kandydaci na biblioteki i sposób ich oceny są opisani wyłącznie w
 [`docs/tooling.md`](docs/tooling.md).
@@ -105,6 +117,9 @@ Nie wolno hardcodować progów i akcji w kontrolerach.
 - limity rozmiaru, zagnieżdżenia, tempa żądań i budżetu tokenów;
 - allowlista modeli oraz docelowo narzędzi i schematów ich argumentów;
 - sygnatury prompt/code/command injection, niebezpiecznej deserializacji i SSRF;
+- uwierzytelnianie callerów (klucz API, sesja lokalna) i autoryzacja per principal (modele,
+  narzędzia, pamięć) wg `policy.yaml`; brak lub złe poświadczenie kończy się odrzuceniem przed
+  wywołaniem modelu;
 - timeout, circuit breaker i jawna strategia `fail-open`/`fail-closed` per kontrola.
 
 ### Kontrole semantyczne — wymienny provider
@@ -163,11 +178,16 @@ poziomie filtrów Gateway. Inne route'y (np. do sidecara) mogą nadal być dekla
 Gateway działa na porcie `8000`, frontend na `3000`. Opcjonalny lokalny sidecar może działać
 na `8001`; zewnętrzny provider jest konfigurowany adresem i poświadczeniami środowiskowymi.
 
+Autoryzacja: `/v1/**` wymaga klucza API albo sesji zalogowanego użytkownika. Uprawnienia do modeli,
+narzędzi i źródeł pamięci wynikają z `policy.yaml` dla danego principal (`key:<nazwa>` albo
+`role:<rola>`). Brak wpisu oznacza odmowę. `/api/**` dashboardu wymaga roli admin. Brak poświadczenia
+daje 401, brak uprawnienia 403, oba przed wywołaniem modelu, i są zapisywane w audycie.
+
 ## 8. Testy i kryteria akceptacji
 
 Przypadki testowe są danymi YAML/JSON, nie kodem. Runner `./run-tests.sh` ma jednym poleceniem
 wysyłać je do działającego gatewaya i sprawdzać status HTTP, akcję, politykę oraz obecność
-bezpiecznego wpisu audytowego.
+bezpiecznego wpisu audytowego. Runner przekazuje klucz API z zmiennej `CL_API_KEY`.
 
 Minimalny zestaw obejmuje:
 
@@ -176,6 +196,7 @@ Minimalny zestaw obejmuje:
 - bezpośrednie i pośrednie prompt injection/jailbreak;
 - niedozwolone tool-calls, SSRF i command injection;
 - przekroczenie budżetu, timeout providera i brak poświadczeń;
+- brak klucza API, zły lub odwołany klucz, brak sesji i brak roli admin: 401/403 bez wywołania modelu;
 - działanie wszystkich trybów kontroli oraz shadow nowej polityki;
 - porównanie ruchu chronionego i niechronionego w Red Team Arena.
 
@@ -186,7 +207,8 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
 
 1. Uzgodnić kontrakty `ControlRequest`, `ControlResult`, decyzję końcową i format polityki.
 2. Zbudować javowy decision pipeline z trybami oraz podstawowymi regułami PII/secrets.
-3. Dodać bezpieczny audyt, metryki, budżet i endpointy dashboardu.
+3. Dodać uwierzytelnianie i autoryzację (`docs/auth/`), bezpieczny audyt, metryki, budżet i
+   endpointy dashboardu.
 4. Zaimplementować interfejs providera semantycznego, wybrany adapter, timeouty i zachowanie
    degradacyjne; lokalny sidecar dodać, jeśli pozwoli czas.
 5. Zastąpić passthrough przez chronione `/v1/chat/completions` i podłączyć frontend. Backend:
@@ -206,6 +228,8 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
   żyją w jednej sieci docker na tym samym hoście (backend łączy się z Ollamą przez nazwę
   usługi `ollama`, nie przez LAN). `OLLAMA_BASE_URL` pozwala deweloperowi nadpisać to lokalnie
   (np. `bootRun` na laptopie z własną Ollamą pod `localhost:11434`, czyli wartość domyślna);
+- uwierzytelnianie i autoryzacja: plan w `docs/auth/`, implementacja jeszcze się nie zaczęła;
+- termin zgłoszenia projektu: 4.10.2026, 23:00 (RULES, pkt 5);
 - decision pipeline, polityki, guardraile, audyt i data-driven test suite są jeszcze do
   zaimplementowania.
 
