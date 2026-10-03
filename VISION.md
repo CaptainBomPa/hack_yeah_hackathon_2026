@@ -134,7 +134,10 @@ kryterium "Robustness of the Solution" (30% wagi — najważniejsze).
 
 ## 8. Status implementacji
 
-`backend/` i `frontend/` to na razie puste katalogi (placeholder). `docker-compose.yml` jest
+`backend/` to na razie pusty katalog (placeholder). `frontend/` ma szkielet (Vite + React +
+TS + Tailwind 3 + Recharts): playground z trace, dashboard, audit log, polityki, placeholder
+session graph; działa na mockach (`VITE_USE_MOCKS=true`), kontrakt API w
+`frontend/src/api/types.ts` do uzgodnienia z gatewayem. `docker-compose.yml` jest
 szkieletem do uzupełnienia o sidecar i realne Dockerfile'e. Ten dokument opisuje docelowy
 kształt — aktualizujcie go, gdy decyzje architektoniczne się zmienią, żeby nie rozjechał się
 z kodem.

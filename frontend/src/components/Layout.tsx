@@ -1,0 +1,39 @@
+import { NavLink, Outlet } from 'react-router-dom'
+import { USE_MOCKS } from '../api/client'
+
+const NAV = [
+  { to: '/playground', label: 'Playground' },
+  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/audit', label: 'Audit log' },
+  { to: '/sessions', label: 'Session graph' },
+  { to: '/policies', label: 'Polityki' },
+]
+
+export default function Layout() {
+  return (
+    <div className="flex min-h-screen">
+      <aside className="w-56 shrink-0 border-r border-slate-800 bg-slate-900 p-4">
+        <h1 className="mb-6 text-lg font-semibold">AI Control Layer</h1>
+        <nav className="flex flex-col gap-1">
+          {NAV.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                `rounded px-3 py-2 text-sm ${isActive ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+        {USE_MOCKS && (
+          <p className="mt-6 rounded bg-amber-900/40 px-2 py-1 text-xs text-amber-300">Tryb mock — bez gatewaya</p>
+        )}
+      </aside>
+      <main className="flex-1 overflow-auto p-6">
+        <Outlet />
+      </main>
+    </div>
+  )
+}

@@ -22,8 +22,8 @@ Zadanie konkursowe źródłowe: [`CRIETRIA AI Control Layer.pdf`](CRIETRIA%20AI%
 
 ## Jak uruchomić projekt
 
-`docker-compose.yml` jest na razie szkieletem (Postgres + backend + frontend) — Dockerfile'e
-w `backend/` i `frontend/` jeszcze nie istnieją. Przed pierwszym pełnym uruchomieniem
+`docker-compose.yml` jest na razie szkieletem (Postgres + backend + frontend) — Dockerfile
+w `backend/` jeszcze nie istnieje (frontend ma swój, patrz `frontend/README.md`). Przed pierwszym pełnym uruchomieniem
 dopisz je zgodnie ze stackiem z `VISION.md` §3. Model LLM uruchamiany jest osobno przez
 Ollamę na Raspberry Pi (sieciowo, nie w docker-compose).
 
