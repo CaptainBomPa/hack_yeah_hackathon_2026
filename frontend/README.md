@@ -1,6 +1,7 @@
 # Frontend — AI Control Layer
 
 React 18 + TypeScript + Vite 6 + Tailwind 3 + Recharts + React Router 6. Działa na Node ≥ 18.
+Wiążący kontrakt architektury i decyzji znajduje się w [`VISION.md`](../VISION.md).
 
 ## Uruchomienie
 
