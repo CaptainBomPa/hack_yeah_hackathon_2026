@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { isMocked, LoginError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { LogoMark } from '../components/Logo'
 
 /** Logowanie kontem lokalnym (backend/config/users.yaml → baza). Po sukcesie zostajemy na tej samej ścieżce. */
 export default function LoginPage({ expired }: { expired: boolean }) {
@@ -27,8 +28,14 @@ export default function LoginPage({ expired }: { expired: boolean }) {
     <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-lg border border-slate-800 bg-slate-900 p-6">
         <div>
-          <h1 className="text-xl font-semibold">AI Control Layer</h1>
-          <p className="mt-1 text-sm text-slate-400">Sign in with your gateway account.</p>
+          <div className="mb-3 flex justify-center">
+            <LogoMark size={72} />
+          </div>
+          <h1 className="text-center text-2xl font-semibold tracking-tight">
+            LLM<span className="text-red-400">inator</span>
+          </h1>
+          <p className="text-center text-[11px] uppercase tracking-wider text-slate-500">AI Control Layer</p>
+          <p className="mt-4 text-sm text-slate-400">Sign in with your gateway account.</p>
         </div>
 
         {expired && (

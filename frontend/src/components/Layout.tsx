@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { isMocked, type Feature } from '../api/client'
 import { useAuth, useCurrentUser } from '../auth/AuthContext'
 import { PlaygroundProvider } from '../playground/PlaygroundContext'
+import Logo from './Logo'
 
 /** `adminOnly`: ekran oparty o /api/**, które backend wpuszcza tylko z rolą ADMIN (SecurityConfig). */
 const NAV: { to: string; label: string; feature?: Feature; adminOnly?: boolean }[] = [
@@ -35,7 +36,9 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen">
       <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-900 p-4">
-        <h1 className="mb-6 text-lg font-semibold">AI Control Layer</h1>
+        <div className="mb-6">
+          <Logo size={34} tagline />
+        </div>
         <nav className="flex flex-col gap-1">
           {NAV.filter((item) => isAdmin || !item.adminOnly).map((item) => (
             <NavLink
