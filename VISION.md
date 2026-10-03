@@ -80,7 +80,7 @@ Operacje bazodanowe nie mogą wykonywać się na event loopie WebFlux: należy i
 | Persistencja | JPA/Hibernate + JDBC; H2 dla profilu `local`, PostgreSQL + Flyway dla `prod` |
 | Semantyka | Wymienny provider za interfejsem Javy: zewnętrzne API lub opcjonalny lokalny sidecar Python/FastAPI + Hugging Face/ONNX |
 | Chroniony model | Ollama na Raspberry Pi; bazowy model `qwen2.5:1.5b-instruct-q4_K_M` |
-| Frontend | React 18, TypeScript, Vite, Tailwind, Recharts |
+| Frontend | React 18, TypeScript, Vite, Tailwind, Recharts; **cały UI po angielsku** (teksty, komunikaty błędów zwracane do UI, formaty dat/liczb `en`) |
 | Uruchomienie | Docker Compose; docelowo backend + Ollama razem na Raspberry Pi (jedna sieć docker, §10); `OLLAMA_BASE_URL` nadpisuje adres dla lokalnego dev |
 | Autentykacja | Spring Security (reactive). Ludzie: lokalne konta w PostgreSQL (BCrypt), formularz i sesja w cookie. Maszyny: klucze API z hashem w bazie. Uprawnienia do modeli, narzędzi i pamięci: `policy.yaml`. Szczegóły: [`docs/auth/`](docs/auth/) |
 
@@ -211,7 +211,7 @@ bezpiecznego wpisu audytowego. Runner przekazuje klucz API z zmiennej `CL_API_KE
 
 Minimalny zestaw obejmuje:
 
-- poprawne prompty w języku polskim i angielskim;
+- poprawne prompty w języku angielskim;
 - PII/secrets i redakcję wejścia oraz wyjścia;
 - bezpośrednie i pośrednie prompt injection/jailbreak;
 - niedozwolone tool-calls, SSRF i command injection;

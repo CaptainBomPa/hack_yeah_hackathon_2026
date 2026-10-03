@@ -6,10 +6,10 @@ export default function SessionGraphPage() {
     <div>
       <PageHeader
         title="Session graph"
-        subtitle="Przepływ danych przez sesję agenta: źródła taintu → LLM/MCP → zablokowane wyjścia."
+        subtitle="Data flow through an agent session: taint sources → LLM/MCP → blocked sinks."
       />
       <div className="flex h-96 items-center justify-center rounded-lg border border-dashed border-slate-700 text-slate-500">
-        TODO: graf sesji (np. React Flow) — czeka na kontrakt API sesji z gatewaya
+        Coming soon: session graph (e.g. React Flow) — waiting for the gateway session API
       </div>
     </div>
   )

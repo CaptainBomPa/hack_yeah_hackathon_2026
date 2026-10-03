@@ -65,7 +65,7 @@ export default function MultiSelect({ label, options, selected, onChange, onOpen
               autoFocus
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="zawęź listę…"
+              placeholder="narrow the list…"
               className="mb-2 w-full rounded bg-slate-800 px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-indigo-500"
             />
           )}
@@ -80,11 +80,11 @@ export default function MultiSelect({ label, options, selected, onChange, onOpen
                 </label>
               </li>
             ))}
-            {visible.length === 0 && <li className="px-2 py-1 text-sm text-slate-500">brak wartości</li>}
+            {visible.length === 0 && <li className="px-2 py-1 text-sm text-slate-500">no values</li>}
           </ul>
           {selected.length > 0 && (
             <button type="button" onClick={() => onChange([])} className="mt-1 px-2 text-xs text-slate-400 hover:text-slate-200">
-              odznacz wszystkie
+              clear selection
             </button>
           )}
         </div>

@@ -16,7 +16,7 @@ export default function LoginPage({ expired }: { expired: boolean }) {
     try {
       await login(form.login.trim(), form.password)
     } catch (err) {
-      setError(err instanceof LoginError ? err.message : 'Nie udało się połączyć z gatewayem.')
+      setError(err instanceof LoginError ? err.message : 'Could not reach the gateway.')
       setForm((f) => ({ ...f, password: '' }))
     } finally {
       setSubmitting(false)
@@ -28,15 +28,15 @@ export default function LoginPage({ expired }: { expired: boolean }) {
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-lg border border-slate-800 bg-slate-900 p-6">
         <div>
           <h1 className="text-xl font-semibold">AI Control Layer</h1>
-          <p className="mt-1 text-sm text-slate-400">Zaloguj się kontem gatewaya.</p>
+          <p className="mt-1 text-sm text-slate-400">Sign in with your gateway account.</p>
         </div>
 
         {expired && (
-          <p className="rounded bg-amber-900/40 px-3 py-2 text-sm text-amber-300">Sesja wygasła — zaloguj się ponownie.</p>
+          <p className="rounded bg-amber-900/40 px-3 py-2 text-sm text-amber-300">Your session has expired — please sign in again.</p>
         )}
 
         <label className="block space-y-1 text-sm">
-          <span className="text-slate-300">Login</span>
+          <span className="text-slate-300">Username</span>
           <input
             autoFocus
             autoComplete="username"
@@ -46,7 +46,7 @@ export default function LoginPage({ expired }: { expired: boolean }) {
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-slate-300">Hasło</span>
+          <span className="text-slate-300">Password</span>
           <input
             type="password"
             autoComplete="current-password"
@@ -66,13 +66,13 @@ export default function LoginPage({ expired }: { expired: boolean }) {
           disabled={submitting || !form.login.trim() || !form.password}
           className="w-full rounded bg-indigo-600 py-2 text-sm font-medium disabled:opacity-50"
         >
-          {submitting ? 'Logowanie…' : 'Zaloguj'}
+          {submitting ? 'Signing in…' : 'Sign in'}
         </button>
 
         <p className="text-xs text-slate-500">
           {isMocked('auth')
-            ? 'Tryb mock: dowolne hasło; login chat* = rola chat, reszta = admin.'
-            : 'Konta demo są zdefiniowane w backend/config/users.yaml.'}
+            ? 'Mock mode: any password; username chat* = chat role, anything else = admin.'
+            : 'Demo accounts are defined in backend/config/users.yaml.'}
         </p>
       </form>
     </div>

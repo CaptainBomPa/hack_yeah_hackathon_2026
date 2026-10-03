@@ -134,7 +134,7 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
         blockedBy: null,
         message: {
           role: 'assistant',
-          content: 'Widzę numer [REDACTED:PII:PESEL]. Nie przekazuj takich danych w czacie.',
+          content: 'I can see a number [REDACTED:PII:PESEL]. Please do not share such data in the chat.',
         },
         trace: [
           allowlist,
@@ -158,7 +158,7 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
         requestId,
         action: 'monitor',
         blockedBy: null,
-        message: { role: 'assistant', content: '(mock) Nie mogę ujawnić instrukcji systemowych.' },
+        message: { role: 'assistant', content: '(mock) I cannot reveal my system instructions.' },
         trace: [
           allowlist,
           pii,
@@ -208,7 +208,7 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
       requestId,
       action: 'allow',
       blockedBy: null,
-      message: { role: 'assistant', content: `(mock) Odpowiedź modelu ${model} na: "${last}"` },
+      message: { role: 'assistant', content: `(mock) Model ${model} answer to: "${last}"` },
       trace: [allowlist, pii, semantic, { ...pii, policy: 'pii.output', stage: 'output', latencyMs: 1 }],
       usage: { promptTokens: 12, completionTokens: 24 },
       budget: nextMockBudget(),
@@ -380,7 +380,7 @@ export function me(): Promise<CurrentUser> {
 }
 
 export function login(login: string, password: string): Promise<CurrentUser> {
-  if (!login.trim() || !password) return Promise.reject(new LoginError('invalid_credentials', 'Nieprawidłowy login lub hasło.'))
+  if (!login.trim() || !password) return Promise.reject(new LoginError('invalid_credentials', 'Invalid username or password.'))
   const role = login.startsWith('chat') ? 'chat' : login.startsWith('agent') ? 'agent' : 'admin'
   const user = { login: login.trim(), role }
   try {

@@ -56,7 +56,7 @@ class AuthController {
         if (throttle.isBlocked(request.login())) {
             log.warn("login throttled login={}", request.login());
             return Mono.just(ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                    .<Object>body(error("too_many_attempts", "Za dużo nieudanych prób. Spróbuj ponownie za minutę.")));
+                    .<Object>body(error("too_many_attempts", "Too many failed attempts. Try again in a minute.")));
         }
         var token = UsernamePasswordAuthenticationToken.unauthenticated(request.login(), request.password());
         return authenticationManager.authenticate(token)
@@ -74,7 +74,7 @@ class AuthController {
                     log.info("login failed login={} reason={}", request.login(), error.getClass().getSimpleName());
                     // Ten sam komunikat dla złego loginu, hasła i wyłączonego konta — bez enumeracji kont.
                     return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                            .<Object>body(error("invalid_credentials", "Nieprawidłowy login lub hasło.")));
+                            .<Object>body(error("invalid_credentials", "Invalid username or password.")));
                 });
     }
 

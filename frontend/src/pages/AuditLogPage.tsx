@@ -11,10 +11,10 @@ import PageHeader from '../components/PageHeader'
 const LIST_FILTERS = ['action', 'principal', 'model', 'blockedBy'] as const
 type ListFilter = (typeof LIST_FILTERS)[number]
 const FILTER_LABELS: Record<ListFilter, string> = {
-  action: 'Akcja',
-  principal: 'Użytkownik',
+  action: 'Action',
+  principal: 'User',
   model: 'Model',
-  blockedBy: 'Zablokowane przez',
+  blockedBy: 'Blocked by',
 }
 const FACET_OF: Record<ListFilter, keyof AuditFacets> = {
   action: 'actions',
@@ -27,7 +27,7 @@ const SESSION_DEBOUNCE_MS = 400
 
 function describeError(err: unknown): string {
   if (err instanceof ForbiddenError) return err.message
-  if (err instanceof AuthRequiredError) return 'Brak zalogowania (401) — zaloguj się kontem admin.'
+  if (err instanceof AuthRequiredError) return 'Not signed in (401) — sign in with an admin account.'
   return String(err)
 }
 
@@ -181,32 +181,32 @@ export default function AuditLogPage() {
     <div className="flex h-[calc(100vh-3rem)] flex-col">
       <PageHeader
         title="Audit log"
-        subtitle="Każda decyzja gatewaya (także allow). Bez treści promptów i odpowiedzi — tylko metadane i ścieżka kontroli."
+        subtitle="Every gateway decision (including allow). No prompt or response content — metadata and control path only."
       />
 
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
         <button onClick={runVerify} disabled={verifying} className="rounded bg-slate-800 px-3 py-1.5 hover:bg-slate-700 disabled:opacity-50">
-          {verifying ? 'Sprawdzam…' : 'Sprawdź integralność'}
+          {verifying ? 'Verifying…' : 'Verify integrity'}
         </button>
         {verify &&
           (verify.valid ? (
             <span className="rounded bg-emerald-900/40 px-2 py-1 text-xs text-emerald-300">
-              Łańcuch nienaruszony · {verify.checked} rekordów
+              Chain intact · {verify.checked} records
             </span>
           ) : (
             <span className="rounded bg-red-900/50 px-2 py-1 text-xs text-red-300">
-              Naruszony od seq {verify.brokenAtSeq} ({verify.reason})
+              Broken at seq {verify.brokenAtSeq} ({verify.reason})
             </span>
           ))}
         <label className="ml-auto flex items-center gap-1.5 text-xs text-slate-400">
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
-          odświeżaj co {REFRESH_MS / 1000} s
+          refresh every {REFRESH_MS / 1000} s
         </label>
         <a href={api.auditExportUrl('csv', filters)} className="rounded bg-slate-800 px-3 py-1.5 hover:bg-slate-700">
-          Eksport CSV
+          Export CSV
         </a>
         <a href={api.auditExportUrl('json', filters)} className="rounded bg-slate-800 px-3 py-1.5 hover:bg-slate-700">
-          Eksport JSON
+          Export JSON
         </a>
       </div>
 
@@ -225,12 +225,12 @@ export default function AuditLogPage() {
         <input
           value={sessionInput}
           onChange={(e) => setSessionInput(e.target.value)}
-          placeholder="sesja zawiera…"
+          placeholder="session contains…"
           className="w-44 rounded bg-slate-800 px-2 py-1.5"
         />
         {hasFilters && (
           <button type="button" onClick={clearFilters} className="px-2 py-1.5 text-slate-400 hover:text-slate-200">
-            wyczyść filtry
+            clear filters
           </button>
         )}
       </div>
@@ -243,13 +243,13 @@ export default function AuditLogPage() {
             <thead className="sticky top-0 bg-slate-900 text-xs uppercase text-slate-400">
               <tr>
                 <th className="px-3 py-2">#</th>
-                <th className="px-3 py-2">Czas</th>
-                <th className="px-3 py-2">Użytkownik</th>
+                <th className="px-3 py-2">Time</th>
+                <th className="px-3 py-2">User</th>
                 <th className="px-3 py-2">Model</th>
-                <th className="px-3 py-2">Akcja</th>
-                <th className="px-3 py-2">Powód</th>
-                <th className="px-3 py-2 text-right">Latencja</th>
-                <th className="px-3 py-2 text-right">Tokeny</th>
+                <th className="px-3 py-2">Action</th>
+                <th className="px-3 py-2">Reason</th>
+                <th className="px-3 py-2 text-right">Latency</th>
+                <th className="px-3 py-2 text-right">Tokens</th>
               </tr>
             </thead>
             <tbody>
@@ -261,7 +261,7 @@ export default function AuditLogPage() {
                 >
                   <td className="px-3 py-2 font-mono text-xs text-slate-500">{e.seq}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-400" title={e.timestamp}>
-                    {new Date(e.timestamp).toLocaleString()}
+                    {new Date(e.timestamp).toLocaleString('en-GB')}
                   </td>
                   <td className="px-3 py-2">
                     <FilterLink onClick={() => filterBy('principal', e.principal)}>{e.principal ?? '—'}</FilterLink>
@@ -290,36 +290,36 @@ export default function AuditLogPage() {
               ))}
             </tbody>
           </table>
-          {loading && <p className="p-4 text-sm text-slate-500">Ładowanie…</p>}
-          {!loading && events.length === 0 && !error && <p className="p-4 text-sm text-slate-500">Brak rekordów.</p>}
+          {loading && <p className="p-4 text-sm text-slate-500">Loading…</p>}
+          {!loading && events.length === 0 && !error && <p className="p-4 text-sm text-slate-500">No records.</p>}
           {nextCursor !== null && (
             <button onClick={loadMore} className="m-3 rounded bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700">
-              Starsze rekordy
+              Older records
             </button>
           )}
         </div>
 
         <aside className="min-h-0 overflow-auto rounded-lg border border-slate-800 bg-slate-900 p-4">
-          {!selected && <p className="text-sm text-slate-500">Wybierz rekord, żeby zobaczyć ścieżkę kontroli.</p>}
+          {!selected && <p className="text-sm text-slate-500">Select a record to see its control path.</p>}
           {selected && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="font-medium">Rekord #{selected.seq}</h3>
+                <h3 className="font-medium">Record #{selected.seq}</h3>
                 <button onClick={() => select(null)} className="text-sm text-slate-400 hover:text-slate-200">
-                  zamknij
+                  close
                 </button>
               </div>
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-                <Field label="czas">{new Date(selected.timestamp).toLocaleString()}</Field>
-                <Field label="użytkownik">
+                <Field label="time">{new Date(selected.timestamp).toLocaleString('en-GB')}</Field>
+                <Field label="user">
                   {selected.principal ?? '—'} {selected.role && `(${selected.role})`}
                 </Field>
-                <Field label="sesja">
+                <Field label="session">
                   <FilterLink onClick={() => filterBy('sessionId', selected.sessionId)}>{selected.sessionId ?? '—'}</FilterLink>
                 </Field>
                 <Field label="model">{selected.model ?? '—'}</Field>
                 <Field label="HTTP">{selected.httpStatus}</Field>
-                <Field label="wiadomości">{selected.messageCount}</Field>
+                <Field label="messages">{selected.messageCount}</Field>
                 <Field label="hash">
                   <span className="break-all font-mono text-slate-500">{selected.recordHash}</span>
                 </Field>
@@ -342,7 +342,7 @@ function FilterLink({ onClick, children }: { onClick: () => void; children: Reac
         onClick()
       }}
       className="text-left hover:text-indigo-300 hover:underline"
-      title="filtruj po tej wartości"
+      title="filter by this value"
     >
       {children}
     </button>

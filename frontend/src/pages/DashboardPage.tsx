@@ -7,9 +7,9 @@ import ActionBadge from '../components/ActionBadge'
 import PageHeader from '../components/PageHeader'
 
 const WINDOWS: { id: DashboardWindow; label: string }[] = [
-  { id: '1h', label: 'Ostatnia godzina' },
-  { id: '24h', label: '24 godziny' },
-  { id: '7d', label: '7 dni' },
+  { id: '1h', label: 'Last hour' },
+  { id: '24h', label: '24 hours' },
+  { id: '7d', label: '7 days' },
 ]
 const REFRESH_MS = 10_000
 
@@ -31,18 +31,18 @@ const GRID = '#1e293b' // slate-800
 const MUTED = '#94a3b8' // slate-400
 const BAR_BLUE = '#3987e5'
 
-const fmt = new Intl.NumberFormat('pl-PL')
+const fmt = new Intl.NumberFormat('en-US')
 
 function describeError(err: unknown): string {
   if (err instanceof ForbiddenError) return err.message
-  if (err instanceof AuthRequiredError) return 'Brak zalogowania (401).'
+  if (err instanceof AuthRequiredError) return 'Not signed in (401).'
   return String(err)
 }
 
 function tickLabel(iso: string, window: DashboardWindow): string {
   const d = new Date(iso)
-  if (window === '7d') return d.toLocaleDateString('pl-PL', { weekday: 'short', hour: '2-digit' })
-  return d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })
+  if (window === '7d') return d.toLocaleDateString('en-GB', { weekday: 'short', hour: '2-digit' })
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
 export default function DashboardPage() {
@@ -77,7 +77,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Dashboard" subtitle="Metryki liczone na żywo z audit logu gatewaya i liczników budżetu." />
+      <PageHeader title="Dashboard" subtitle="Metrics computed live from the gateway audit log and budget counters." />
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <div className="flex rounded bg-slate-800 p-0.5">
@@ -93,16 +93,16 @@ export default function DashboardPage() {
         </div>
         <label className="ml-auto flex items-center gap-1.5 text-xs text-slate-400">
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
-          odświeżaj co {REFRESH_MS / 1000} s
+          refresh every {REFRESH_MS / 1000} s
         </label>
-        {updatedAt && <span className="text-xs text-slate-500">aktualizacja {updatedAt.toLocaleTimeString('pl-PL')}</span>}
+        {updatedAt && <span className="text-xs text-slate-500">updated {updatedAt.toLocaleTimeString('en-GB')}</span>}
       </div>
 
       {error && <p className="rounded bg-red-950/50 px-3 py-2 text-sm text-red-300">{error}</p>}
-      {!data && !error && <p className="text-sm text-slate-500">Ładowanie…</p>}
+      {!data && !error && <p className="text-sm text-slate-500">Loading…</p>}
       {data?.truncated && (
         <p className="rounded bg-amber-900/40 px-3 py-2 text-sm text-amber-300">
-          W tym oknie jest więcej rekordów niż limit agregacji — liczby są dolną granicą.
+          This window has more records than the aggregation limit — numbers are a lower bound.
         </p>
       )}
       {data && <DashboardBody data={data} window={window} />}
@@ -121,31 +121,31 @@ function DashboardBody({ data, window }: { data: DashboardData; window: Dashboar
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <StatTile label="Żądania" value={fmt.format(requests)} />
-        <StatTile label="Zablokowane" value={fmt.format(blocked)} note={`${pctOf(blocked)} żądań`} to={`/audit?action=block`} />
-        <StatTile label="Zredagowane" value={fmt.format(byAction.redact ?? 0)} note={pctOf(byAction.redact ?? 0)} to="/audit?action=redact" />
+        <StatTile label="Requests" value={fmt.format(requests)} />
+        <StatTile label="Blocked" value={fmt.format(blocked)} note={`${pctOf(blocked)} of requests`} to={`/audit?action=block`} />
+        <StatTile label="Redacted" value={fmt.format(byAction.redact ?? 0)} note={pctOf(byAction.redact ?? 0)} to="/audit?action=redact" />
         <StatTile
-          label="Latencja p50 / p95"
+          label="Latency p50 / p95"
           value={data.latency.p50 === null ? '—' : `${fmt.format(data.latency.p50)} / ${fmt.format(data.latency.p95 ?? 0)} ms`}
-          note={data.latency.samples ? `${data.latency.samples} odpowiedzi modelu` : 'brak odpowiedzi modelu'}
+          note={data.latency.samples ? `${data.latency.samples} model responses` : 'no model responses'}
         />
         <StatTile
-          label="Tokeny"
+          label="Tokens"
           value={fmt.format(data.tokens.prompt + data.tokens.completion)}
           note={`${fmt.format(data.tokens.prompt)} in · ${fmt.format(data.tokens.completion)} out`}
         />
-        <StatTile label="Błędy (5xx)" value={fmt.format(errors)} note={pctOf(errors)} />
+        <StatTile label="Errors (5xx)" value={fmt.format(errors)} note={pctOf(errors)} />
       </div>
 
       {requests === 0 ? (
-        <Card title="Brak ruchu">
+        <Card title="No traffic">
           <p className="text-sm text-slate-400">
-            W tym oknie nikt nie rozmawiał z modelem. Wyślij prompt z <Link to="/playground" className="text-indigo-300 hover:underline">Playground</Link>.
+            Nobody talked to the model in this window. Send a prompt from the <Link to="/playground" className="text-indigo-300 hover:underline">Playground</Link>.
           </p>
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <Card title="Decyzje w czasie">
+          <Card title="Decisions over time">
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={timeline} margin={{ top: 4, right: 8, bottom: 0, left: -12 }} barCategoryGap="20%">
                 <CartesianGrid stroke={GRID} vertical={false} />
@@ -164,7 +164,7 @@ function DashboardBody({ data, window }: { data: DashboardData; window: Dashboar
                   contentStyle={{ background: '#020617', border: '1px solid #334155', borderRadius: 6, fontSize: 12 }}
                   labelStyle={{ color: '#e2e8f0' }}
                   itemStyle={{ color: '#e2e8f0' }}
-                  labelFormatter={(v: string) => new Date(v).toLocaleString('pl-PL')}
+                  labelFormatter={(v: string) => new Date(v).toLocaleString('en-GB')}
                 />
                 {/* Tekst legendy w kolorze tekstu; kolor niesie tylko kwadracik obok. */}
                 <Legend
@@ -189,15 +189,15 @@ function DashboardBody({ data, window }: { data: DashboardData; window: Dashboar
             </ResponsiveContainer>
           </Card>
 
-          <Card title="Najczęściej działające kontrole" subtitle="Kontrole, które zablokowały albo zmieniły żądanie (z trace).">
-            {data.controls.length === 0 && <p className="text-sm text-slate-500">Żadna kontrola nie zadziałała w tym oknie.</p>}
+          <Card title="Most active controls" subtitle="Controls that blocked or changed a request (from the trace).">
+            {data.controls.length === 0 && <p className="text-sm text-slate-500">No control fired in this window.</p>}
             <ul className="space-y-2">
               {data.controls.map((c) => (
                 <li key={`${c.policy}-${c.action}`}>
                   <button
                     onClick={() => navigate(c.action === 'block' ? `/audit?blockedBy=${encodeURIComponent(c.policy)}` : `/audit?action=${c.action}`)}
                     className="group w-full text-left"
-                    title="pokaż w audycie"
+                    title="show in audit log"
                   >
                     <div className="mb-0.5 flex items-center justify-between gap-2 text-sm">
                       <span className="flex min-w-0 items-center gap-2">
@@ -218,16 +218,16 @@ function DashboardBody({ data, window }: { data: DashboardData; window: Dashboar
       )}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Card title="Budżet tokenów — dziś" subtitle="Dzienny limit per rola z policy.yaml.">
+        <Card title="Token budget — today" subtitle="Daily limit per role from policy.yaml.">
           <ul className="space-y-3">
             {data.budgets.map((b) => (
               <BudgetMeter key={b.role} {...b} />
             ))}
           </ul>
         </Card>
-        <Card title="Modele">
+        <Card title="Models">
           <StatsTable
-            columns={['Model', 'Żądania', 'Blokady', 'Tokeny']}
+            columns={['Model', 'Requests', 'Blocked', 'Tokens']}
             rows={data.models.map((m) => ({
               key: m.model,
               to: `/audit?model=${encodeURIComponent(m.model)}`,
@@ -235,9 +235,9 @@ function DashboardBody({ data, window }: { data: DashboardData; window: Dashboar
             }))}
           />
         </Card>
-        <Card title="Użytkownicy">
+        <Card title="Users">
           <StatsTable
-            columns={['Użytkownik', 'Żądania', 'Blokady', 'Tokeny']}
+            columns={['User', 'Requests', 'Blocked', 'Tokens']}
             rows={data.principals.map((p) => ({
               key: p.principal,
               to: `/audit?principal=${encodeURIComponent(p.principal)}`,
@@ -281,7 +281,7 @@ function StatTile({ label, value, note, to }: { label: string; value: string; no
   )
   const cls = 'block rounded-lg border border-slate-800 bg-slate-900 p-4'
   return to ? (
-    <Link to={to} className={`${cls} hover:border-slate-600`} title="pokaż w audycie">
+    <Link to={to} className={`${cls} hover:border-slate-600`} title="show in audit log">
       {body}
     </Link>
   ) : (
@@ -296,7 +296,7 @@ function BudgetMeter({ role, usedTokens, reservedTokens, cap }: DashboardData['b
       <li className="text-sm">
         <div className="flex justify-between">
           <span>{role}</span>
-          <span className="text-slate-400">{fmt.format(usedTokens)} tok. · bez limitu</span>
+          <span className="text-slate-400">{fmt.format(usedTokens)} tokens · no limit</span>
         </div>
       </li>
     )
@@ -304,9 +304,9 @@ function BudgetMeter({ role, usedTokens, reservedTokens, cap }: DashboardData['b
   const ratio = cap > 0 ? usedTokens / cap : 0
   const status =
     ratio >= 1
-      ? { label: 'wyczerpany', color: '#d03b3b', text: 'text-red-300' }
+      ? { label: 'exhausted', color: '#d03b3b', text: 'text-red-300' }
       : ratio >= 0.8
-        ? { label: 'blisko limitu', color: '#fab219', text: 'text-amber-300' }
+        ? { label: 'near limit', color: '#fab219', text: 'text-amber-300' }
         : { label: 'ok', color: '#0ca30c', text: 'text-emerald-300' }
   return (
     <li className="text-sm">
@@ -316,7 +316,7 @@ function BudgetMeter({ role, usedTokens, reservedTokens, cap }: DashboardData['b
           {fmt.format(usedTokens)} / {fmt.format(cap)} · <span className={status.text}>{status.label}</span>
         </span>
       </div>
-      <div className="h-2 rounded bg-slate-800" title={reservedTokens ? `${fmt.format(reservedTokens)} tok. zarezerwowanych dla żądań w toku` : undefined}>
+      <div className="h-2 rounded bg-slate-800" title={reservedTokens ? `${fmt.format(reservedTokens)} tokens reserved for in-flight requests` : undefined}>
         <div className="h-2 rounded" style={{ width: `${Math.min(ratio, 1) * 100}%`, background: status.color }} />
       </div>
     </li>
@@ -325,7 +325,7 @@ function BudgetMeter({ role, usedTokens, reservedTokens, cap }: DashboardData['b
 
 function StatsTable({ columns, rows }: { columns: string[]; rows: { key: string; to: string; cells: ReactNode[] }[] }) {
   const navigate = useNavigate()
-  if (rows.length === 0) return <p className="text-sm text-slate-500">Brak danych w tym oknie.</p>
+  if (rows.length === 0) return <p className="text-sm text-slate-500">No data in this window.</p>
   return (
     <table className="w-full text-sm">
       <thead className="text-left text-xs uppercase text-slate-500">
@@ -339,7 +339,7 @@ function StatsTable({ columns, rows }: { columns: string[]; rows: { key: string;
       </thead>
       <tbody>
         {rows.map((r) => (
-          <tr key={r.key} onClick={() => navigate(r.to)} className="cursor-pointer border-t border-slate-800 hover:bg-slate-800/50" title="pokaż w audycie">
+          <tr key={r.key} onClick={() => navigate(r.to)} className="cursor-pointer border-t border-slate-800 hover:bg-slate-800/50" title="show in audit log">
             {r.cells.map((cell, i) => (
               <td key={i} className={`max-w-[10rem] truncate py-1.5 ${i > 0 ? 'text-right tabular-nums text-slate-300' : ''}`}>
                 {cell}

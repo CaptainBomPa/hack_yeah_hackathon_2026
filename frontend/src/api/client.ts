@@ -50,7 +50,7 @@ export class GatewayUnavailableError extends Error {
 /** Brak sesji/poświadczeń: 401 z gatewaya (docs/auth). */
 export class AuthRequiredError extends Error {
   constructor() {
-    super('Wymagane zalogowanie')
+    super('Sign-in required')
     this.name = 'AuthRequiredError'
   }
 }
@@ -90,13 +90,13 @@ async function loginLive(login: string, password: string): Promise<CurrentUser> 
   if (res.ok) return res.json() as Promise<CurrentUser>
   const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null
   if (body?.error?.message) throw new LoginError(body.error.code ?? 'error', body.error.message)
-  throw new LoginError('unavailable', `Logowanie nie powiodło się (HTTP ${res.status}). Czy backend działa?`)
+  throw new LoginError('unavailable', `Sign-in failed (HTTP ${res.status}). Is the backend running?`)
 }
 
 /** 403 z /api/** — backend wymaga roli ADMIN (SecurityConfig). */
 export class ForbiddenError extends Error {
   constructor() {
-    super('Brak uprawnień — ten widok wymaga konta z rolą admin')
+    super('Access denied — this view requires an admin account')
     this.name = 'ForbiddenError'
   }
 }
@@ -109,7 +109,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 401) throw authRequired()
   if (res.status === 403) throw new ForbiddenError()
   if (res.status === 404 && path.startsWith('/api/'))
-    throw new Error(`Backend nie ma endpointu ${path.split('?')[0]} — działa starsza wersja? Przebuduj backend.`)
+    throw new Error(`Backend has no endpoint ${path.split('?')[0]} — running an older build? Rebuild the backend.`)
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`)
   return res.json() as Promise<T>
 }
@@ -150,7 +150,7 @@ async function chatLive({ model, messages, sessionId, signal }: ChatParams): Pro
     })
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
-    throw new GatewayUnavailableError(null, 'Brak połączenia z gatewayem')
+    throw new GatewayUnavailableError(null, 'Cannot reach the gateway')
   }
 
   if (res.status === 401) throw authRequired()
@@ -166,7 +166,7 @@ async function chatLive({ model, messages, sessionId, signal }: ChatParams): Pro
 
   throw new GatewayUnavailableError(
     res.status,
-    `Gateway odpowiedział HTTP ${res.status} spoza kontraktu${text ? `: ${text.slice(0, 200)}` : ''}`,
+    `Gateway returned HTTP ${res.status} outside the contract${text ? `: ${text.slice(0, 200)}` : ''}`,
   )
 }
 
