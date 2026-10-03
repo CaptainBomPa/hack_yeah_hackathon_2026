@@ -21,6 +21,11 @@ public record GuardedChatResponse(
         return new GuardedChatResponse(requestId, "allow", message, null, trace, usage);
     }
 
+    public static GuardedChatResponse redact(
+            String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace) {
+        return new GuardedChatResponse(requestId, "redact", message, null, trace, usage);
+    }
+
     public static GuardedChatResponse block(
             String requestId, String blockedBy, List<ControlTrace> trace) {
         return new GuardedChatResponse(requestId, "block", null, blockedBy, trace, null);

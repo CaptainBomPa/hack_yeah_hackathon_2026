@@ -175,6 +175,11 @@ Gateway — wybór providera zależy od treści body, a odpowiedź wymaga przeks
 kontraktu, co w kontrolerze jest prostsze i mniej ryzykowne niż ręczne przepisywanie URI/body na
 poziomie filtrów Gateway. Inne route'y (np. do sidecara) mogą nadal być deklaratywne.
 
+Kontrole deterministyczne to beany `Guard` (`backend/.../guard`) spięte w łańcuch `GuardChain`,
+wołany z kontrolera przed (`INPUT`) i po (`OUTPUT`) wywołaniu modelu. Włączane i parametryzowane
+w `control-layer.guards` (`application.yml`); guard bez wpisu jest wyłączony. Pierwszy działający:
+`PII-001` (PESEL). Instrukcja: `docs/deterministic/how-to-write-a-rule.md`.
+
 **Dostęp do dashboardu (`/api/**` i UI) wymaga zalogowania**: OAuth2/OIDC obsługiwane w gatewayu
 (Spring Security `oauth2Login`, wzorzec BFF). Przeglądarka dostaje tylko ciasteczko sesji `HttpOnly`
 i token CSRF, tokeny IdP nie trafiają do JS. IdP wymienny w configu (Google; do decyzji Keycloak w

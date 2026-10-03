@@ -27,6 +27,12 @@ control-layer:
     - tag: qwen2.5:0.5b
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       enabled: true
+  # Deterministyczne guardy (docs/deterministic/how-to-write-a-rule.md). Guard bez wpisu poniżej
+  # jest wyłączony; klucz musi odpowiadać `Guard.id()`, inaczej aplikacja nie wystartuje.
+  guards:
+    enabled: true
+    rules:
+      PII-001: { enabled: true, order: 100 }
   sidecar:
     # Sidecar semantyczny (Python/FastAPI) — jeszcze nie istnieje.
     base-url: ${SIDECAR_BASE_URL:http://localhost:8001}

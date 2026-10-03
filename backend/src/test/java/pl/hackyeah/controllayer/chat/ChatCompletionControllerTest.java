@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.client.WebClient;
 import pl.hackyeah.controllayer.chat.upstream.OllamaChatClient;
+import pl.hackyeah.controllayer.guard.GuardChain;
+import pl.hackyeah.controllayer.guard.GuardProperties;
 import pl.hackyeah.controllayer.model.ModelCatalog;
 import pl.hackyeah.controllayer.model.ModelCatalogProperties;
 
@@ -45,7 +47,8 @@ class ChatCompletionControllerTest {
                 List.of(new ModelCatalogProperties.ModelEntry("test-model", baseUrl, true)),
                 Duration.ofSeconds(5)));
         var upstreamClient = new OllamaChatClient(WebClient.builder());
-        var controller = new ChatCompletionController(catalog, upstreamClient);
+        var guardChain = new GuardChain(List.of(), new GuardProperties(true, null));
+        var controller = new ChatCompletionController(catalog, upstreamClient, guardChain);
 
         client = WebTestClient.bindToController(controller)
                 .controllerAdvice(new ChatCompletionExceptionHandler())
