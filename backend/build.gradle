@@ -30,6 +30,8 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	implementation 'org.flywaydb:flyway-database-postgresql'
+	// Paczka reguł sekretów Gitleaks (TOML); wersja z jackson-bom zarządzanego przez Spring Boot.
+	implementation 'tools.jackson.dataformat:jackson-dataformat-toml'
 	runtimeOnly 'com.h2database:h2'
 	runtimeOnly 'org.postgresql:postgresql'
 

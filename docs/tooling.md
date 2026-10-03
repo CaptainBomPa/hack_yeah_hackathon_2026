@@ -18,6 +18,7 @@ ale nie zmienia architektury ani zakresu MVP. W razie rozbieżności obowiązuje
 | Provider semantyczny | Javowy interfejs + klient HTTP | planowane; oddziela pipeline od usługi lub modelu |
 | Lokalny sidecar ML | Python, FastAPI | opcjonalny; cienki adapter do lokalnych modeli klasyfikujących |
 | PII (deterministyczne) | Koncepty i wzorce Microsoft Presidio (MIT), silnik w Javie | wybrane; format recognizerów, scoring i część wzorców (`docs/deterministic/pii-recognizers.md`); Presidio nie działa w runtime |
+| Sekrety (deterministyczne) | Paczka reguł Gitleaks v8.30.1 (MIT) + `jackson-dataformat-toml`, silnik w Javie | wybrane; reguły jako dane w `rules/gitleaks/`, guard `SEC-GITLEAKS`; Gitleaks nie działa w runtime |
 | PII (NER) | Presidio Analyzer + spaCy `pl_core_news_*` | kandydat na provider semantyczny (imiona, adresy w prozie) oraz oracle testowy dla naszego silnika |
 | Chroniony LLM | Ollama | wybrane; lokalny model z Raspberry Pi, bazowo `qwen2.5:1.5b-instruct-q4_K_M` |
 

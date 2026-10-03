@@ -38,6 +38,17 @@ control-layer:
   guards:
     enabled: true
     rules:
+      # Sekrety (docs/deterministic/02-secret-detection.md): paczka reguł Gitleaks v8.30.1 (MIT) z
+      # src/main/resources/rules/gitleaks/, skan Aho-Corasick + regex w oknie. Przed PII, żeby sekret
+      # zawierający cyfry został zredagowany w całości. Id reguł Gitleaks rozdzielone przecinkami:
+      # blockRules blokują, monitorRules tylko raportują w trace, disabledRules są pomijane.
+      SEC-GITLEAKS:
+        enabled: true
+        order: 50
+        params:
+          blockRules: "private-key"
+          monitorRules: ""
+          disabledRules: ""
       # Silnik PII z konceptami Presidio (docs/deterministic/pii-recognizers.md). Recognizery
       # PII-001..PII-008 są danymi w `pack`; tu tylko próg i nadpisania akcji per id recognizera.
       PII-RECOGNIZERS:

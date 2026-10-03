@@ -190,6 +190,11 @@ zaimplementowany w Javie bez NLP. Recognizery `PII-001..PII-008` są w
 `backend/src/main/resources/rules/pii/recognizers.yaml`, a ich id trafiają do `trace`. Samo
 Presidio nie działa w ścieżce deterministycznej; może być jedynie implementacją providera
 semantycznego dla NER (imiona, adresy). Szczegóły: `docs/deterministic/pii-recognizers.md`.
+Sekrety obsługuje guard `SEC-GITLEAKS` (przed PII): reguły to przypięta paczka Gitleaks
+(`backend/src/main/resources/rules/gitleaks/gitleaks.toml`, MIT) ładowana jako dane, a skan robi nasz
+silnik w Javie — jeden przebieg Aho-Corasick po keywordach, regex tylko wokół trafień, filtry Gitleaks
+(entropia, allowlisty). Binarka Gitleaks nie działa w runtime. Polityka (`blockRules`, `monitorRules`,
+`disabledRules`) wskazuje id reguł Gitleaks; domyślnie redakcja, klucz prywatny blokuje.
 
 **Logowanie (docs/auth, bez SSO i zewnętrznego IdP — działa offline):** konta lokalne z
 `backend/config/users.yaml`, zakładane w bazie przy starcie (hasła BCrypt). Przeglądarka loguje się

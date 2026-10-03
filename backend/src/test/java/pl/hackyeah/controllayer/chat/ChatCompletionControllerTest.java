@@ -2,6 +2,7 @@ package pl.hackyeah.controllayer.chat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -30,6 +31,7 @@ import pl.hackyeah.controllayer.budget.BudgetService;
 import pl.hackyeah.controllayer.chat.upstream.OllamaChatClient;
 import pl.hackyeah.controllayer.guard.GuardChain;
 import pl.hackyeah.controllayer.guard.GuardProperties;
+import pl.hackyeah.controllayer.guard.secrets.SecretGuard;
 import pl.hackyeah.controllayer.model.ModelCatalog;
 import pl.hackyeah.controllayer.model.ModelCatalogProperties;
 import pl.hackyeah.controllayer.policy.ModelAccessPolicy;
@@ -56,6 +58,7 @@ class ChatCompletionControllerTest {
     void setUp() throws IOException {
         stubUpstream = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         stubUpstream.createContext("/v1/chat/completions", exchange -> {
+            upstreamBodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             String body = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"czesc\"}}],"
                     + "\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}";
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
@@ -210,13 +213,60 @@ class ChatCompletionControllerTest {
                 .doesNotExist();
     }
 
+    @Test
+    void redactsSecretsBeforeTheModelSeesThem() {
+        withSecretGuard();
+        String token = "ghp_" + "x8Kq2mN7pL4vR9tY1wE3uI6oA5sD0fG8hJ2k";
+        clientAs("chat")
+                .post()
+                .uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model",
+                        List.of(new ChatMessage("user", "mój token " + token + " nie działa"))))
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody()
+                .jsonPath("$.action")
+                .isEqualTo("redact");
+        assertEquals(1, upstreamBodies.size());
+        assertFalse(upstreamBodies.getFirst().contains(token), "sekret nie może dotrzeć do modelu");
+        assertTrue(upstreamBodies.getFirst().contains("[REDACTED:github-pat]"));
+    }
+
+    @Test
+    void blocksPrivateKeysWithoutCallingTheModel() {
+        withSecretGuard();
+        String key = "-----BEGIN RSA " + "PRIVATE KEY-----\n"
+                + "MIIEowIBAAKCAQEAu1SU1LfVLPHCozMxH2Mo4lgOEePzNm0tRgeLezV6ffAt0gun\n"
+                + "VTLw7onLRnrq0/IzW7yWR7QkrmBL7jTKEn5u+qKhbwKfBstIs+bMY2Zkp18gnTxK\n"
+                + "-----END RSA " + "PRIVATE KEY-----";
+        clientAs("chat")
+                .post()
+                .uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", key))))
+                .exchange()
+                .expectStatus()
+                .isEqualTo(403)
+                .expectBody()
+                .jsonPath("$.blockedBy")
+                .isEqualTo("SEC-GITLEAKS");
+        assertTrue(upstreamBodies.isEmpty(), "model nie może zostać wywołany");
+    }
+
+    private void withSecretGuard() {
+        var rule = new GuardProperties.Rule(true, 50, Map.of("blockRules", "private-key"));
+        guardProperties = new GuardProperties(true, Map.of("SEC-GITLEAKS", rule));
+        guardChain = new GuardChain(List.of(new SecretGuard()), guardProperties);
+    }
+
+    private final List<String> upstreamBodies = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private GuardProperties guardProperties = new GuardProperties(true, null);
+    private GuardChain guardChain = new GuardChain(List.of(), guardProperties);
     private final List<AuditEntry> audited = new ArrayList<>();
     private boolean failingAudit;
 
     private ChatCompletionController controller() {
         var upstreamClient = new OllamaChatClient(WebClient.builder());
-        var guardProperties = new GuardProperties(true, null);
-        var guardChain = new GuardChain(List.of(), guardProperties);
         AuditLog auditLog = entry -> {
             if (failingAudit) {
                 throw new IllegalStateException("database down");
