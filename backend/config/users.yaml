@@ -1,8 +1,10 @@
-# Konta startowe (DEMO / HACKATHON). Ładowane przy starcie tylko, gdy control-layer.seed.enabled=true
-# (profil local). Konta już istniejące w bazie nie są zmieniane.
+# Konta startowe (DEMO / HACKATHON). Zakładane w bazie przy każdym starcie backendu, gdy
+# control-layer.seed.enabled=true (ustawione niżej) — w profilu local (H2) i w docker-compose
+# (Postgres; katalog config/ jest montowany do kontenera). Konta już istniejące nie są zmieniane.
+# Logowanie: w przeglądarce ekran logowania frontendu (sesja w ciasteczku), maszyny: HTTP Basic.
 #
 # UWAGA: hasła są jawne, słabe i publiczne (repo, README). Służą wyłącznie do demo i testów.
-# W profilu prod seeding jest wyłączony; konta produkcyjne tworzy scripts/add-user.sh.
+# Wdrożenie produkcyjne: ustaw enabled: false, a konta twórz przez scripts/add-user.sh.
 #
 # Role muszą istnieć w backend/config/policy.yaml (policy.roles): admin, chat, agent.
 control-layer:

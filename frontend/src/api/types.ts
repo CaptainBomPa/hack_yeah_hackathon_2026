@@ -127,3 +127,9 @@ export interface PolicyInfo {
   updatedAt: string
   raw: string // YAML polityki
 }
+
+/** Zalogowany użytkownik — AuthController.CurrentUser (GET /api/auth/me). Role z backend/config/policy.yaml. */
+export interface CurrentUser {
+  login: string
+  role: 'admin' | 'chat' | 'agent' | string | null
+}

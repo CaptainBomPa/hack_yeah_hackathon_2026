@@ -1,4 +1,4 @@
-import type { ChatParams } from './client'
+import { AuthRequiredError, LoginError, type ChatParams } from './client'
 import { newId } from '../lib/id'
 import type {
   AuditEvent,
@@ -6,6 +6,7 @@ import type {
   AuditPage,
   AuditVerifyResult,
   ControlTrace,
+  CurrentUser,
   DashboardStats,
   GuardedChatResponse,
   PolicyInfo,
@@ -299,4 +300,42 @@ budget:
 export function policy(raw?: string): Promise<PolicyInfo> {
   if (raw !== undefined) mockPolicy = raw
   return delay({ version: 'v3', hash: 'a1b2c3d', updatedAt: new Date().toISOString(), raw: mockPolicy })
+}
+
+// --- logowanie (tryb mock): dowolne hasło; rola z prefiksu loginu (chat*/agent*), reszta = admin ---
+const MOCK_SESSION_KEY = 'mock-auth-user'
+
+function readMockUser(): CurrentUser | null {
+  try {
+    const raw = sessionStorage.getItem(MOCK_SESSION_KEY)
+    return raw ? (JSON.parse(raw) as CurrentUser) : null
+  } catch {
+    return null
+  }
+}
+
+export function me(): Promise<CurrentUser> {
+  const user = readMockUser()
+  return user ? delay(user, 100) : Promise.reject(new AuthRequiredError())
+}
+
+export function login(login: string, password: string): Promise<CurrentUser> {
+  if (!login.trim() || !password) return Promise.reject(new LoginError('invalid_credentials', 'Nieprawidłowy login lub hasło.'))
+  const role = login.startsWith('chat') ? 'chat' : login.startsWith('agent') ? 'agent' : 'admin'
+  const user = { login: login.trim(), role }
+  try {
+    sessionStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user))
+  } catch {
+    // tryb prywatny bez storage: sesja mock tylko do odświeżenia strony
+  }
+  return delay(user, 300)
+}
+
+export function logout(): Promise<void> {
+  try {
+    sessionStorage.removeItem(MOCK_SESSION_KEY)
+  } catch {
+    // brak storage
+  }
+  return delay(undefined, 100)
 }
