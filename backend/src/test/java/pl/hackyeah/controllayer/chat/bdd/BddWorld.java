@@ -3,10 +3,12 @@ package pl.hackyeah.controllayer.chat.bdd;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -39,7 +41,8 @@ import pl.hackyeah.controllayer.model.ModelCatalogProperties;
 import pl.hackyeah.controllayer.policy.ModelAccessPolicy;
 import pl.hackyeah.controllayer.policy.PolicyDocument;
 import pl.hackyeah.controllayer.policy.PolicyProperties;
-import pl.hackyeah.controllayer.policy.PolicySource;
+import pl.hackyeah.controllayer.policy.PolicyStore;
+import pl.hackyeah.controllayer.policy.TestPolicyStores;
 
 /**
  * Shared context for a single Cucumber scenario — a fresh instance per scenario (PicoContainer,
@@ -69,9 +72,18 @@ public class BddWorld {
 
     private GuardedChatResponse lastResponse;
     private int lastHttpStatus;
+    private boolean lastEditWasRejected;
+    private String lastModelTag;
+    private String lastPromptText;
+
+    private ChatCompletionController controller;
+    private PolicyStore policyStore;
 
     public BddWorld() {
         guardRules.put("PII-RECOGNIZERS", new GuardProperties.Rule(true, 100, Map.of()));
+        // PolicyValidator requires an "admin" role to exist in every policy document, including
+        // the seed the store boots with — see PolicyValidator.ADMIN_ROLE.
+        rolePolicies.put("admin", new PolicyProperties.RolePolicy(List.of(PolicyDocument.ANY_MODEL), null));
     }
 
     // ---- Given: building the scenario ----
@@ -143,8 +155,16 @@ public class BddWorld {
         send(defaultModelTag, text, false);
     }
 
+    /** Resends the exact same prompt and model as the previous send — used to show a policy edit take effect. */
+    public void resendLastPrompt() {
+        send(lastModelTag, lastPromptText, true);
+    }
+
     private void send(String modelTag, String text, boolean authenticated) {
-        var client = buildClient(authenticated);
+        ensureController();
+        lastModelTag = modelTag;
+        lastPromptText = text;
+        var client = webTestClientFor(authenticated);
         var result = client.post()
                 .uri("/v1/chat/completions")
                 .bodyValue(new ChatCompletionRequest(
@@ -170,9 +190,104 @@ public class BddWorld {
         return audited;
     }
 
+    public boolean lastEditWasRejected() {
+        return lastEditWasRejected;
+    }
+
+    // ---- When: editing the live policy mid-scenario ----
+
+    public void removeModelFromRole(String role, String modelTag) {
+        ensureController();
+        editPolicy(doc -> {
+            var roles = new LinkedHashMap<>(doc.roles());
+            var existing = roles.get(role);
+            var models = existing.models().stream().filter(m -> !m.equals(modelTag)).toList();
+            roles.put(role, new PolicyDocument.RolePolicy(models, existing.dailyTokens()));
+            return new PolicyDocument(roles, doc.models(), doc.guards(), doc.limits());
+        });
+    }
+
+    public void grantModelToRole(String role, String modelTag) {
+        ensureController();
+        editPolicy(doc -> {
+            var roles = new LinkedHashMap<>(doc.roles());
+            var existing = roles.getOrDefault(role, new PolicyDocument.RolePolicy(List.of(), null));
+            var models = new ArrayList<>(existing.models());
+            models.add(modelTag);
+            roles.put(role, new PolicyDocument.RolePolicy(models, existing.dailyTokens()));
+            return new PolicyDocument(roles, doc.models(), doc.guards(), doc.limits());
+        });
+    }
+
+    public void setModelEnabledLive(String modelTag, boolean enabled) {
+        ensureController();
+        editPolicy(doc -> {
+            var models = doc.models().stream()
+                    .map(m -> m.tag().equals(modelTag) ? new PolicyDocument.ModelPolicy(modelTag, enabled) : m)
+                    .toList();
+            return new PolicyDocument(doc.roles(), models, doc.guards(), doc.limits());
+        });
+    }
+
+    public void setGuardEnabledLive(String guardId, boolean enabled) {
+        ensureController();
+        editPolicy(doc -> {
+            var guards = new LinkedHashMap<>(doc.guards());
+            var existing = guards.get(guardId);
+            guards.put(guardId, new PolicyDocument.GuardPolicy(enabled, existing.order(), existing.params()));
+            return new PolicyDocument(doc.roles(), doc.models(), guards, doc.limits());
+        });
+    }
+
+    public void setGuardParamLive(String guardId, String paramName, Object value) {
+        ensureController();
+        editPolicy(doc -> {
+            var guards = new LinkedHashMap<>(doc.guards());
+            var existing = guards.get(guardId);
+            var params = new LinkedHashMap<>(existing.params());
+            params.put(paramName, value);
+            guards.put(guardId, new PolicyDocument.GuardPolicy(existing.enabled(), existing.order(), params));
+            return new PolicyDocument(doc.roles(), doc.models(), guards, doc.limits());
+        });
+    }
+
+    public void setRoleDailyBudgetLive(String role, Long dailyTokens) {
+        ensureController();
+        editPolicy(doc -> {
+            var roles = new LinkedHashMap<>(doc.roles());
+            var existing = roles.getOrDefault(role, new PolicyDocument.RolePolicy(List.of(), null));
+            roles.put(role, new PolicyDocument.RolePolicy(existing.models(), dailyTokens));
+            return new PolicyDocument(roles, doc.models(), doc.guards(), doc.limits());
+        });
+    }
+
+    public void setMaxInputTokensLive(int max) {
+        ensureController();
+        editPolicy(doc -> new PolicyDocument(doc.roles(), doc.models(), doc.guards(),
+                new PolicyDocument.Limits(max, doc.limits().maxOutputTokens())));
+    }
+
+    public void attemptInvalidPolicyEdit() {
+        ensureController();
+        lastEditWasRejected = false;
+        try {
+            editPolicy(doc -> new PolicyDocument(Map.of(), doc.models(), doc.guards(), doc.limits()));
+        } catch (PolicyStore.ValidationException e) {
+            lastEditWasRejected = true;
+        }
+    }
+
+    private void editPolicy(UnaryOperator<PolicyDocument> mutator) {
+        var updated = mutator.apply(policyStore.current().document());
+        policyStore.apply(updated, null, "admin-test", "test", null);
+    }
+
     // ---- building the gateway ----
 
-    private WebTestClient buildClient(boolean authenticated) {
+    private void ensureController() {
+        if (controller != null) {
+            return;
+        }
         if (fakeModel == null) {
             // The scenario did not explicitly define a model/response — a sensible default stub.
             registerModelOnly("default-model");
@@ -197,18 +312,19 @@ public class BddWorld {
         }
         var guardChain = new GuardChain(guards, guardProperties);
 
-        // The controller takes one policy snapshot per request and uses it for every check
-        // (model allowlist, role access, guards, budget) — it must be built from the exact same
-        // config objects as catalog/policy/guardChain/budgetGate above, or the snapshot the
-        // controller actually uses would disagree with what we just configured.
-        PolicySource policySource = PolicySource.fixed(
-                PolicyDocument.fromConfig(policyProperties, catalogProperties, guardProperties, budgetLimits));
+        // A real, hot-reloadable PolicyStore (same validation/version-bumping logic as
+        // production) backed by in-memory fakes — lets scenarios edit the live policy mid-flight
+        // and see the very next request obey the new rules, exactly like the real admin API does.
+        policyStore = TestPolicyStores.seeded(guards, catalogProperties, policyProperties, guardProperties,
+                budgetLimits);
 
         AuditLog auditLog = audited::add;
-        var controller = new ChatCompletionController(catalog, policy, budgetGate,
+        controller = new ChatCompletionController(catalog, policy, budgetGate,
                 new OllamaChatClient(WebClient.builder()), guardChain, auditLog,
-                new AuditProperties(null, true, null), policySource);
+                new AuditProperties(null, true, null), policyStore);
+    }
 
+    private WebTestClient webTestClientFor(boolean authenticated) {
         var builder = WebTestClient.bindToController(controller);
         if (authenticated) {
             var authentication = new UsernamePasswordAuthenticationToken(
