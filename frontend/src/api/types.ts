@@ -101,12 +101,21 @@ export interface AuditPage {
   nextCursor: number | null
 }
 
+/** Filtry audytu: listy = „którakolwiek z wartości” (wybór z facets), sessionId = „zawiera”. */
 export interface AuditFilters {
-  action?: string
-  principal?: string
-  model?: string
-  blockedBy?: string
+  action?: string[]
+  principal?: string[]
+  model?: string[]
+  blockedBy?: string[]
   sessionId?: string
+}
+
+/** GET /api/audit/facets — wartości występujące w audycie, do list wyboru. */
+export interface AuditFacets {
+  actions: string[]
+  principals: string[]
+  models: string[]
+  blockedBy: string[]
 }
 
 /** GET /api/audit/verify — AuditService.VerifyResult. */

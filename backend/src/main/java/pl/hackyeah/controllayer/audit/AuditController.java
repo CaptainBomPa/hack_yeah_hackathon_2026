@@ -45,10 +45,10 @@ public class AuditController {
 
     @GetMapping("/events")
     public Mono<AuditEventView.Page> events(
-            @RequestParam(required = false) String action,
-            @RequestParam(required = false) String principal,
-            @RequestParam(required = false) String model,
-            @RequestParam(required = false) String blockedBy,
+            @RequestParam(required = false) List<String> action,
+            @RequestParam(required = false) List<String> principal,
+            @RequestParam(required = false) List<String> model,
+            @RequestParam(required = false) List<String> blockedBy,
             @RequestParam(required = false) String sessionId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
@@ -65,6 +65,15 @@ public class AuditController {
         });
     }
 
+    /** Wartości występujące w audycie — do list wyboru w filtrach (zamiast wpisywania nazw z pamięci). */
+    @GetMapping("/facets")
+    public Mono<Facets> facets() {
+        return blocking(() -> new Facets(repository.distinctActions(), repository.distinctPrincipals(),
+                repository.distinctModels(), repository.distinctBlockedBy()));
+    }
+
+    public record Facets(List<String> actions, List<String> principals, List<String> models, List<String> blockedBy) {}
+
     @GetMapping("/events/{requestId}")
     public Mono<ResponseEntity<AuditEventView>> event(@PathVariable String requestId) {
         return blocking(() -> auditService.find(requestId)
@@ -80,10 +89,10 @@ public class AuditController {
     @GetMapping("/export")
     public Mono<ResponseEntity<String>> export(
             @RequestParam(defaultValue = "csv") String format,
-            @RequestParam(required = false) String action,
-            @RequestParam(required = false) String principal,
-            @RequestParam(required = false) String model,
-            @RequestParam(required = false) String blockedBy,
+            @RequestParam(required = false) List<String> action,
+            @RequestParam(required = false) List<String> principal,
+            @RequestParam(required = false) List<String> model,
+            @RequestParam(required = false) List<String> blockedBy,
             @RequestParam(required = false) String sessionId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {

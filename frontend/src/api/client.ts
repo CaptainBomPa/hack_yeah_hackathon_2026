@@ -1,5 +1,6 @@
 import type {
   AuditEvent,
+  AuditFacets,
   AuditFilters,
   AuditPage,
   AuditVerifyResult,
@@ -112,10 +113,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-function auditQuery(params: Record<string, string | number | undefined>): string {
+/** Listy idą jako powtórzony parametr (`action=block&action=redact`) — tak czyta je AuditController. */
+function auditQuery(params: Record<string, string | string[] | number | undefined>): string {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== '') query.set(key, String(value))
+    if (Array.isArray(value)) value.filter(Boolean).forEach((v) => query.append(key, v))
+    else if (value !== undefined && value !== '') query.set(key, String(value))
   }
   return query.toString()
 }
@@ -205,6 +208,10 @@ export const api = {
   auditEvent(requestId: string): Promise<AuditEvent> {
     if (isMocked('audit')) return mocks.auditEvent(requestId)
     return request(`/api/audit/events/${encodeURIComponent(requestId)}`)
+  },
+  auditFacets(): Promise<AuditFacets> {
+    if (isMocked('audit')) return mocks.auditFacets()
+    return request('/api/audit/facets')
   },
   auditVerify(): Promise<AuditVerifyResult> {
     if (isMocked('audit')) return mocks.auditVerify()

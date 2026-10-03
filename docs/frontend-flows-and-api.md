@@ -244,7 +244,8 @@ ArenaRun = {
 
 | Metoda | Ścieżka | Odpowiedź |
 |---|---|---|
-| GET | `/api/audit/events?action&principal&model&blockedBy&sessionId&from&to&before&limit` | `{ items: AuditEvent[], nextCursor }` (✅ działa) |
+| GET | `/api/audit/events?action&principal&model&blockedBy&sessionId&from&to&before&limit` | `{ items: AuditEvent[], nextCursor }` (✅). `action/principal/model/blockedBy` wielowartościowe (powtórzony parametr = OR), `sessionId` = zawiera |
+| GET | `/api/audit/facets` | `{ actions[], principals[], models[], blockedBy[] }` — wartości do list wyboru (✅) |
 | GET | `/api/audit/events/{requestId}` | `AuditEvent` z pełnym `trace` (✅) |
 | GET | `/api/audit/verify` | `{ valid, checked, brokenAtSeq, reason }` (✅) |
 | GET | `/api/audit/export?format=csv\|json&<filtry>` | plik (✅) |

@@ -1,14 +1,29 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, AuthRequiredError, ForbiddenError } from '../api/client'
-import type { AuditEvent, AuditFilters, AuditVerifyResult, GuardedChatResponse } from '../api/types'
+import type { AuditEvent, AuditFacets, AuditFilters, AuditVerifyResult, GuardAction, GuardedChatResponse } from '../api/types'
 import ActionBadge from '../components/ActionBadge'
 import DecisionXray from '../components/DecisionXray'
+import MultiSelect from '../components/MultiSelect'
 import PageHeader from '../components/PageHeader'
 
-const FILTER_KEYS = ['action', 'principal', 'model', 'blockedBy', 'sessionId'] as const
-const ACTIONS = ['allow', 'monitor', 'redact', 'require_approval', 'block']
+/** Filtry wielowartościowe (lista z checkboxami); sesja osobno — wyszukiwanie „zawiera”. */
+const LIST_FILTERS = ['action', 'principal', 'model', 'blockedBy'] as const
+type ListFilter = (typeof LIST_FILTERS)[number]
+const FILTER_LABELS: Record<ListFilter, string> = {
+  action: 'Akcja',
+  principal: 'Użytkownik',
+  model: 'Model',
+  blockedBy: 'Zablokowane przez',
+}
+const FACET_OF: Record<ListFilter, keyof AuditFacets> = {
+  action: 'actions',
+  principal: 'principals',
+  model: 'models',
+  blockedBy: 'blockedBy',
+}
 const REFRESH_MS = 5000
+const SESSION_DEBOUNCE_MS = 400
 
 function describeError(err: unknown): string {
   if (err instanceof ForbiddenError) return err.message
@@ -23,11 +38,16 @@ function asDecision(e: AuditEvent): GuardedChatResponse {
 
 export default function AuditLogPage() {
   const [params, setParams] = useSearchParams()
-  const filters: AuditFilters = Object.fromEntries(
-    FILTER_KEYS.map((k) => [k, params.get(k) ?? undefined]).filter(([, v]) => v),
-  )
-  const filterKey = FILTER_KEYS.map((k) => params.get(k) ?? '').join('|')
+  const filters: AuditFilters = {
+    ...Object.fromEntries(LIST_FILTERS.map((k) => [k, params.getAll(k)]).filter(([, v]) => v.length)),
+    ...(params.get('sessionId') ? { sessionId: params.get('sessionId')! } : {}),
+  }
+  const filterKey = [...LIST_FILTERS, 'sessionId'].map((k) => params.getAll(k).join(',')).join('|')
+  const hasFilters = LIST_FILTERS.some((k) => params.has(k)) || params.has('sessionId')
   const selectedId = params.get('requestId')
+
+  const [facets, setFacets] = useState<AuditFacets>({ actions: [], principals: [], models: [], blockedBy: [] })
+  const [sessionInput, setSessionInput] = useState(params.get('sessionId') ?? '')
 
   const [events, setEvents] = useState<AuditEvent[]>([])
   const [nextCursor, setNextCursor] = useState<number | null>(null)
@@ -107,23 +127,47 @@ export default function AuditLogPage() {
     }
   }
 
-  function applyFilters(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const form = new FormData(e.currentTarget)
-    const next = new URLSearchParams()
-    for (const key of FILTER_KEYS) {
-      const value = String(form.get(key) ?? '').trim()
-      if (value) next.set(key, value)
-    }
+  const loadFacets = useCallback(() => {
+    api.auditFacets().then(setFacets).catch(() => undefined)
+  }, [])
+  useEffect(loadFacets, [loadFacets])
+
+  // Pole sesji: filtr idzie do URL po chwili bez pisania, nie przy każdym znaku.
+  useEffect(() => {
+    const current = params.get('sessionId') ?? ''
+    if (sessionInput.trim() === current) return
+    const timer = setTimeout(() => {
+      const next = new URLSearchParams(params)
+      if (sessionInput.trim()) next.set('sessionId', sessionInput.trim())
+      else next.delete('sessionId')
+      next.delete('requestId')
+      setParams(next, { replace: true })
+    }, SESSION_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [sessionInput, params, setParams])
+
+  function setListFilter(key: ListFilter, values: string[]) {
+    const next = new URLSearchParams(params)
+    next.delete(key)
+    values.forEach((v) => next.append(key, v))
+    next.delete('requestId')
     setParams(next)
   }
 
-  function filterBy(key: (typeof FILTER_KEYS)[number], value: string | null) {
+  /** Kliknięcie wartości w tabeli dokłada ją do filtra. */
+  function filterBy(key: ListFilter | 'sessionId', value: string | null) {
     if (!value) return
-    const next = new URLSearchParams(params)
-    next.set(key, value)
-    next.delete('requestId')
-    setParams(next)
+    if (key === 'sessionId') {
+      setSessionInput(value)
+      return
+    }
+    const current = params.getAll(key)
+    if (!current.includes(value)) setListFilter(key, [...current, value])
+  }
+
+  function clearFilters() {
+    setSessionInput('')
+    setParams(new URLSearchParams())
   }
 
   function select(requestId: string | null) {
@@ -166,31 +210,30 @@ export default function AuditLogPage() {
         </a>
       </div>
 
-      <form key={filterKey} onSubmit={applyFilters} className="mb-3 flex flex-wrap items-end gap-2 text-sm">
-        <select name="action" defaultValue={filters.action ?? ''} className="rounded bg-slate-800 px-2 py-1.5">
-          <option value="">każda akcja</option>
-          {ACTIONS.map((a) => (
-            <option key={a} value={a}>
-              {a}
-            </option>
-          ))}
-        </select>
-        {(['principal', 'model', 'blockedBy', 'sessionId'] as const).map((key) => (
-          <input
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        {LIST_FILTERS.map((key) => (
+          <MultiSelect
             key={key}
-            name={key}
-            defaultValue={filters[key] ?? ''}
-            placeholder={{ principal: 'użytkownik', model: 'model', blockedBy: 'zablokowane przez', sessionId: 'sesja' }[key]}
-            className="w-40 rounded bg-slate-800 px-2 py-1.5"
+            label={FILTER_LABELS[key]}
+            options={facets[FACET_OF[key]]}
+            selected={params.getAll(key)}
+            onChange={(values) => setListFilter(key, values)}
+            onOpen={loadFacets}
+            renderOption={key === 'action' ? (value) => <ActionBadge action={value as GuardAction} /> : undefined}
           />
         ))}
-        <button className="rounded bg-indigo-600 px-3 py-1.5 font-medium">Filtruj</button>
-        {Object.keys(filters).length > 0 && (
-          <button type="button" onClick={() => setParams(new URLSearchParams())} className="px-2 py-1.5 text-slate-400 hover:text-slate-200">
-            wyczyść
+        <input
+          value={sessionInput}
+          onChange={(e) => setSessionInput(e.target.value)}
+          placeholder="sesja zawiera…"
+          className="w-44 rounded bg-slate-800 px-2 py-1.5"
+        />
+        {hasFilters && (
+          <button type="button" onClick={clearFilters} className="px-2 py-1.5 text-slate-400 hover:text-slate-200">
+            wyczyść filtry
           </button>
         )}
-      </form>
+      </div>
 
       {error && <p className="mb-3 rounded bg-red-950/50 px-3 py-2 text-sm text-red-300">{error}</p>}
 

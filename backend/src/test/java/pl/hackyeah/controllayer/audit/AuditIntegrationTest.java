@@ -132,6 +132,44 @@ class AuditIntegrationTest {
                 .expectBody().jsonPath("$.valid").isEqualTo(true);
     }
 
+    @Test
+    void filtersByAnyOfSeveralValuesAndBySessionFragment() {
+        String marker = UUID.randomUUID().toString().substring(0, 8);
+        String allowed = append("allow", null, "Sess-" + marker + "-a");
+        String redacted = append("redact", null, "sess-" + marker + "-b");
+        append("block", "model.allowlist", "sess-" + marker + "-c");
+
+        client.get().uri(uri -> uri.path("/api/audit/events")
+                        .queryParam("sessionId", marker.toUpperCase())
+                        .queryParam("action", "allow")
+                        .queryParam("action", "redact")
+                        .build())
+                .header("Authorization", basic(adminLogin))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.items.length()").isEqualTo(2)
+                .jsonPath("$.items[0].requestId").isEqualTo(redacted)
+                .jsonPath("$.items[1].requestId").isEqualTo(allowed);
+
+        // % z wejścia to zwykły znak, nie wildcard LIKE.
+        client.get().uri(uri -> uri.path("/api/audit/events").queryParam("sessionId", "%").build())
+                .header("Authorization", basic(adminLogin))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody().jsonPath("$.items.length()").isEqualTo(0);
+
+        client.get().uri("/api/audit/facets")
+                .header("Authorization", basic(adminLogin))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.actions[?(@ == 'redact')]").exists()
+                .jsonPath("$.models[?(@ == 'test-model')]").exists()
+                .jsonPath("$.blockedBy[?(@ == 'model.allowlist')]").exists()
+                .jsonPath("$.principals[?(@ == 'tester')]").exists();
+    }
+
     private String append(String action, String blockedBy, String sessionId) {
         String requestId = UUID.randomUUID().toString();
         auditService.append(new AuditEntry(requestId, Instant.now(), "tester", "chat", sessionId, "test-model",

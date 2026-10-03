@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api, AUTH_REQUIRED_EVENT } from '../api/client'
 import type { CurrentUser } from '../api/types'
+import { clearPersistedPlayground } from '../playground/PlaygroundContext'
 
 type AuthState =
   | { status: 'loading' }
@@ -46,6 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await api.logout().catch(() => undefined)
+    // Rozmowy mogą zawierać dane wrażliwe — nie zostawiamy ich w przeglądarce po wylogowaniu.
+    clearPersistedPlayground()
     setState({ status: 'anonymous', expired: false })
   }, [])
 

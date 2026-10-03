@@ -116,11 +116,12 @@ paths:
         kontroli; bez treści promptów i odpowiedzi. Paginacja keyset: `before` = `nextCursor`.
       operationId: auditEvents
       parameters:
-        - { name: action, in: query, schema: { type: string } }
-        - { name: principal, in: query, schema: { type: string } }
-        - { name: model, in: query, schema: { type: string } }
-        - { name: blockedBy, in: query, schema: { type: string } }
-        - { name: sessionId, in: query, schema: { type: string } }
+        # Listy: parametr powtórzony (action=block&action=redact) = rekord ma którąkolwiek z wartości.
+        - { name: action, in: query, schema: { type: array, items: { type: string } }, explode: true }
+        - { name: principal, in: query, schema: { type: array, items: { type: string } }, explode: true }
+        - { name: model, in: query, schema: { type: array, items: { type: string } }, explode: true }
+        - { name: blockedBy, in: query, schema: { type: array, items: { type: string } }, explode: true }
+        - { name: sessionId, in: query, description: 'Zawiera (bez wielkości liter; % i _ to zwykłe znaki).', schema: { type: string } }
         - { name: from, in: query, schema: { type: string, format: date-time } }
         - { name: to, in: query, schema: { type: string, format: date-time } }
         - { name: before, in: query, schema: { type: integer, format: int64 } }
@@ -137,6 +138,22 @@ paths:
                   nextCursor: { type: integer, format: int64, nullable: true }
         '401': { description: Brak uwierzytelnienia. }
         '403': { description: Rola inna niż ADMIN. }
+  /api/audit/facets:
+    get:
+      summary: Wartości występujące w audycie — do list wyboru w filtrach
+      operationId: auditFacets
+      responses:
+        '200':
+          description: Posortowane, unikalne wartości.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actions: { type: array, items: { type: string } }
+                  principals: { type: array, items: { type: string } }
+                  models: { type: array, items: { type: string } }
+                  blockedBy: { type: array, items: { type: string } }
   /api/audit/events/{requestId}:
     get:
       summary: Jeden rekord audytu po requestId z odpowiedzi czatu

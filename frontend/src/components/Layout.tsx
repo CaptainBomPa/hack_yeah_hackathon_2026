@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { isMocked, type Feature } from '../api/client'
 import { useAuth, useCurrentUser } from '../auth/AuthContext'
+import { PlaygroundProvider } from '../playground/PlaygroundContext'
 
 /** `adminOnly`: ekran oparty o /api/**, które backend wpuszcza tylko z rolą ADMIN (SecurityConfig). */
 const NAV: { to: string; label: string; feature?: Feature; adminOnly?: boolean }[] = [
@@ -61,7 +62,10 @@ export default function Layout() {
         </div>
       </aside>
       <main className="flex-1 overflow-auto p-6">
-        <Outlet />
+        {/* Layout nie odmontowuje się przy zmianie zakładki — rozmowa z Playground tu przeżywa. */}
+        <PlaygroundProvider key={user.login} owner={user.login}>
+          <Outlet />
+        </PlaygroundProvider>
       </main>
     </div>
   )

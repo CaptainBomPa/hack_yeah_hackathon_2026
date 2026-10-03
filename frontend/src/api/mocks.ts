@@ -2,6 +2,7 @@ import { AuthRequiredError, LoginError, type ChatParams } from './client'
 import { newId } from '../lib/id'
 import type {
   AuditEvent,
+  AuditFacets,
   AuditFilters,
   AuditPage,
   AuditVerifyResult,
@@ -274,17 +275,29 @@ const MOCK_AUDIT: AuditEvent[] = Array.from({ length: 120 }, (_, i) => {
 })
 
 export function auditEvents(filters: AuditFilters, before?: number | null): Promise<AuditPage> {
+  const anyOf = (wanted: string[] | undefined, value: string | null) => !wanted?.length || (value !== null && wanted.includes(value))
+  const session = filters.sessionId?.trim().toLowerCase()
   const matches = MOCK_AUDIT.filter(
     (e) =>
       (!before || e.seq < before) &&
-      (!filters.action || e.action === filters.action) &&
-      (!filters.principal || e.principal === filters.principal) &&
-      (!filters.model || e.model === filters.model) &&
-      (!filters.blockedBy || e.blockedBy === filters.blockedBy) &&
-      (!filters.sessionId || e.sessionId === filters.sessionId),
+      anyOf(filters.action, e.action) &&
+      anyOf(filters.principal, e.principal) &&
+      anyOf(filters.model, e.model) &&
+      anyOf(filters.blockedBy, e.blockedBy) &&
+      (!session || (e.sessionId ?? '').toLowerCase().includes(session)),
   )
   const items = matches.slice(0, 50)
   return delay({ items, nextCursor: matches.length > 50 ? items[items.length - 1].seq : null })
+}
+
+export function auditFacets(): Promise<AuditFacets> {
+  const distinct = (values: (string | null)[]) => [...new Set(values.filter((v): v is string => !!v))].sort()
+  return delay({
+    actions: distinct(MOCK_AUDIT.map((e) => e.action)),
+    principals: distinct(MOCK_AUDIT.map((e) => e.principal)),
+    models: distinct(MOCK_AUDIT.map((e) => e.model)),
+    blockedBy: distinct(MOCK_AUDIT.map((e) => e.blockedBy)),
+  })
 }
 
 export function auditEvent(requestId: string): Promise<AuditEvent> {
