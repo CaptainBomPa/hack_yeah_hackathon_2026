@@ -21,6 +21,8 @@ import org.springframework.web.bind.annotation.RestController;
 import pl.hackyeah.controllayer.audit.AuditEntry;
 import pl.hackyeah.controllayer.audit.AuditLog;
 import pl.hackyeah.controllayer.audit.AuditProperties;
+import pl.hackyeah.controllayer.budget.BudgetGate;
+import pl.hackyeah.controllayer.budget.BudgetGate.BudgetCheck;
 import pl.hackyeah.controllayer.chat.upstream.OllamaChatClient;
 import pl.hackyeah.controllayer.chat.upstream.OpenAiChatCompletionResponse;
 import pl.hackyeah.controllayer.chat.upstream.UpstreamModelException;
@@ -55,16 +57,18 @@ public class ChatCompletionController {
 
     private final ModelCatalog modelCatalog;
     private final ModelAccessPolicy modelAccessPolicy;
+    private final BudgetGate budgetGate;
     private final OllamaChatClient upstreamClient;
     private final GuardChain guardChain;
     private final AuditLog auditLog;
     private final AuditProperties auditProperties;
 
     public ChatCompletionController(ModelCatalog modelCatalog, ModelAccessPolicy modelAccessPolicy,
-            OllamaChatClient upstreamClient, GuardChain guardChain, AuditLog auditLog,
+            BudgetGate budgetGate, OllamaChatClient upstreamClient, GuardChain guardChain, AuditLog auditLog,
             AuditProperties auditProperties) {
         this.modelCatalog = modelCatalog;
         this.modelAccessPolicy = modelAccessPolicy;
+        this.budgetGate = budgetGate;
         this.upstreamClient = upstreamClient;
         this.guardChain = guardChain;
         this.auditLog = auditLog;
@@ -163,36 +167,62 @@ public class ChatCompletionController {
         var trace = new ArrayList<ControlTrace>();
         trace.add(new ControlTrace(MODEL_ALLOWLIST_POLICY, "deterministic", "allow", elapsedMillis(startedAt), null));
 
-        return Mono.fromCallable(() -> guardInput(requestId, request.messages()))
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(input -> {
-                    trace.addAll(input.trace());
-                    if (input.action() == Action.BLOCK) {
-                        log.info("requestId={} model={} action=block blockedBy={}",
-                                requestId, request.model(), input.blockedBy());
-                        return Mono.just(ResponseEntity.status(403)
-                                .body(GuardedChatResponse.block(requestId, input.blockedBy(), trace)));
-                    }
-                    var guardedRequest = new ChatCompletionRequest(request.model(), input.messages());
-                    return upstreamClient
-                            .complete(model.baseUrl(), guardedRequest, timeout)
-                            .flatMap(response -> Mono.fromCallable(
-                                            () -> buildResponse(requestId, input.action(), response, trace))
-                                    .subscribeOn(Schedulers.boundedElastic()))
-                            .doOnNext(entity -> log.info("requestId={} model={} action={} latencyMs={}",
-                                    requestId, request.model(), entity.getBody().action(), elapsedMillis(startedAt)));
-                })
-                .onErrorResume(UpstreamModelException.class, error -> {
-                    log.warn("requestId={} model={} action=block reason=upstream-error", requestId, request.model(), error);
-                    trace.add(new ControlTrace(
-                            "upstream.availability",
-                            "deterministic",
-                            "block",
-                            elapsedMillis(startedAt),
-                            error.getMessage()));
-                    return Mono.just(ResponseEntity.status(502)
-                            .body(GuardedChatResponse.block(requestId, "upstream-error", trace)));
-                });
+        return budgetGate.check(caller.role(), request.messages()).flatMap(budget -> {
+            trace.add(budget.toTrace(elapsedMillis(startedAt)));
+            if (!budget.allowed()) {
+                log.info("requestId={} caller={} role={} action=block blockedBy={}",
+                        requestId, caller.login(), caller.role(), budget.blockedBy());
+                return Mono.just(ResponseEntity.status(budget.httpStatus())
+                        .body(GuardedChatResponse.block(requestId, budget.blockedBy(), trace)));
+            }
+
+            return Mono.fromCallable(() -> guardInput(requestId, request.messages()))
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .flatMap(input -> {
+                        trace.addAll(input.trace());
+                        if (input.action() == Action.BLOCK) {
+                            log.info("requestId={} model={} action=block blockedBy={}",
+                                    requestId, request.model(), input.blockedBy());
+                            // Żądanie nigdy nie dotarło do modelu — zwalniamy rezerwację, inaczej
+                            // zablokowane prompty cicho zjadałyby budżet roli (BUDGET-004).
+                            return budgetGate.reconcile(caller.role(), budget, 0)
+                                    .then(Mono.fromSupplier(() -> ResponseEntity.status(403)
+                                            .body(GuardedChatResponse.block(requestId, input.blockedBy(), trace))));
+                        }
+                        var guardedRequest = new ChatCompletionRequest(request.model(), input.messages())
+                                .withMaxTokens(budget.maxOutputTokens());
+                        return upstreamClient
+                                .complete(model.baseUrl(), guardedRequest, timeout)
+                                .flatMap(response -> budgetGate
+                                        .reconcile(caller.role(), budget, actualTokensOf(response))
+                                        .then(Mono.fromCallable(
+                                                        () -> buildResponse(requestId, input.action(), response, trace))
+                                                .subscribeOn(Schedulers.boundedElastic())))
+                                .doOnNext(entity -> log.info("requestId={} model={} action={} latencyMs={}",
+                                        requestId, request.model(), entity.getBody().action(), elapsedMillis(startedAt)));
+                    })
+                    .onErrorResume(UpstreamModelException.class, error -> {
+                        log.warn("requestId={} model={} action=block reason=upstream-error",
+                                requestId, request.model(), error);
+                        trace.add(new ControlTrace(
+                                "upstream.availability",
+                                "deterministic",
+                                "block",
+                                elapsedMillis(startedAt),
+                                error.getMessage()));
+                        // Model nie odpowiedział — bez usage z Ollamy, więc zwalniamy całą
+                        // rezerwację zamiast zgadywać zużycie (case file §7: "nigdy 0" dotyczy
+                        // uciętego streamu z częściową odpowiedzią; tu nie wygenerowano nic).
+                        return budgetGate.reconcile(caller.role(), budget, 0)
+                                .then(Mono.fromSupplier(() -> ResponseEntity.status(502)
+                                        .body(GuardedChatResponse.block(requestId, "upstream-error", trace))));
+                    });
+        });
+    }
+
+    private static long actualTokensOf(OpenAiChatCompletionResponse response) {
+        Usage usage = extractUsage(response);
+        return (long) usage.promptTokens() + usage.completionTokens();
     }
 
     private static ResponseEntity<GuardedChatResponse> unauthenticated(String requestId) {

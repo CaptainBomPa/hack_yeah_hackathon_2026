@@ -17,11 +17,15 @@ public record PolicyProperties(Map<String, RolePolicy> roles) {
 
     /**
      * `models` to tagi z katalogu modeli; `"*"` oznacza wszystkie modele z katalogu.
+     * `budget` to dzienny limit tokenów tej roli (docs/deterministic/14-token-budget-quotas.md,
+     * BUDGET-003); `null` = bez limitu (np. `admin`).
      */
-    public record RolePolicy(List<String> models) {
+    public record RolePolicy(List<String> models, Budget budget) {
 
         public RolePolicy {
             models = models == null ? List.of() : List.copyOf(models);
         }
+
+        public record Budget(long dailyTokens) {}
     }
 }

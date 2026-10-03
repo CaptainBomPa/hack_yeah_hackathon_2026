@@ -24,6 +24,9 @@ import org.springframework.web.server.WebFilter;
 import pl.hackyeah.controllayer.audit.AuditEntry;
 import pl.hackyeah.controllayer.audit.AuditLog;
 import pl.hackyeah.controllayer.audit.AuditProperties;
+import pl.hackyeah.controllayer.budget.BudgetGate;
+import pl.hackyeah.controllayer.budget.BudgetLimitsProperties;
+import pl.hackyeah.controllayer.budget.BudgetService;
 import pl.hackyeah.controllayer.chat.upstream.OllamaChatClient;
 import pl.hackyeah.controllayer.guard.GuardChain;
 import pl.hackyeah.controllayer.guard.GuardProperties;
@@ -44,6 +47,7 @@ class ChatCompletionControllerTest {
     private String baseUrl;
     private ModelCatalog catalog;
     private ModelAccessPolicy policy;
+    private PolicyProperties policyProperties;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -64,9 +68,10 @@ class ChatCompletionControllerTest {
         catalog = new ModelCatalog(new ModelCatalogProperties(
                 List.of(new ModelCatalogProperties.ModelEntry("test-model", baseUrl, true)),
                 Duration.ofSeconds(5)));
-        policy = new ModelAccessPolicy(new PolicyProperties(Map.of(
-                "chat", new PolicyProperties.RolePolicy(List.of("test-model")),
-                "agent", new PolicyProperties.RolePolicy(List.of()))));
+        policyProperties = new PolicyProperties(Map.of(
+                "chat", new PolicyProperties.RolePolicy(List.of("test-model"), null),
+                "agent", new PolicyProperties.RolePolicy(List.of(), null)));
+        policy = new ModelAccessPolicy(policyProperties);
     }
 
     @AfterEach
@@ -213,7 +218,11 @@ class ChatCompletionControllerTest {
             }
             audited.add(entry);
         };
-        return new ChatCompletionController(catalog, policy, upstreamClient, guardChain, auditLog,
+        // Żadna rola w tym teście nie ma skonfigurowanego budżetu (RolePolicy.budget() == null),
+        // więc BudgetGate nigdy nie dotyka JdbcTemplate — bezpiecznie można przekazać null.
+        var budgetGate = new BudgetGate(
+                policyProperties, new BudgetLimitsProperties(null, null), new BudgetService(null));
+        return new ChatCompletionController(catalog, policy, budgetGate, upstreamClient, guardChain, auditLog,
                 new AuditProperties(null, true, null));
     }
 
