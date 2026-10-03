@@ -172,8 +172,11 @@ public class ChatCompletionController {
             if (!budget.allowed()) {
                 log.info("requestId={} caller={} role={} action=block blockedBy={}",
                         requestId, caller.login(), caller.role(), budget.blockedBy());
+                // Dla input_limit nie znamy sensownego "used" (nie doszło nawet do sprawdzenia
+                // budżetu dziennego); dla daily_cap used≈limit, bo właśnie dlatego blokujemy.
+                BudgetUsage budgetUsage = budget.isDailyCapExceeded() ? budget.toUsage(budget.dailyLimit()) : null;
                 return Mono.just(ResponseEntity.status(budget.httpStatus())
-                        .body(GuardedChatResponse.block(requestId, budget.blockedBy(), trace)));
+                        .body(GuardedChatResponse.block(requestId, budget.blockedBy(), trace, budgetUsage)));
             }
 
             return Mono.fromCallable(() -> guardInput(requestId, request.messages()))
@@ -186,8 +189,9 @@ public class ChatCompletionController {
                             // Żądanie nigdy nie dotarło do modelu — zwalniamy rezerwację, inaczej
                             // zablokowane prompty cicho zjadałyby budżet roli (BUDGET-004).
                             return budgetGate.reconcile(caller.role(), budget, 0)
-                                    .then(Mono.fromSupplier(() -> ResponseEntity.status(403)
-                                            .body(GuardedChatResponse.block(requestId, input.blockedBy(), trace))));
+                                    .map(usedAfter -> ResponseEntity.status(403)
+                                            .body(GuardedChatResponse.block(
+                                                    requestId, input.blockedBy(), trace, budget.toUsage(usedAfter))));
                         }
                         var guardedRequest = new ChatCompletionRequest(request.model(), input.messages())
                                 .withMaxTokens(budget.maxOutputTokens());
@@ -195,8 +199,9 @@ public class ChatCompletionController {
                                 .complete(model.baseUrl(), guardedRequest, timeout)
                                 .flatMap(response -> budgetGate
                                         .reconcile(caller.role(), budget, actualTokensOf(response))
-                                        .then(Mono.fromCallable(
-                                                        () -> buildResponse(requestId, input.action(), response, trace))
+                                        .flatMap(usedAfter -> Mono.fromCallable(() -> buildResponse(
+                                                        requestId, input.action(), response, trace,
+                                                        budget.toUsage(usedAfter)))
                                                 .subscribeOn(Schedulers.boundedElastic())))
                                 .doOnNext(entity -> log.info("requestId={} model={} action={} latencyMs={}",
                                         requestId, request.model(), entity.getBody().action(), elapsedMillis(startedAt)));
@@ -214,8 +219,9 @@ public class ChatCompletionController {
                         // rezerwację zamiast zgadywać zużycie (case file §7: "nigdy 0" dotyczy
                         // uciętego streamu z częściową odpowiedzią; tu nie wygenerowano nic).
                         return budgetGate.reconcile(caller.role(), budget, 0)
-                                .then(Mono.fromSupplier(() -> ResponseEntity.status(502)
-                                        .body(GuardedChatResponse.block(requestId, "upstream-error", trace))));
+                                .map(usedAfter -> ResponseEntity.status(502)
+                                        .body(GuardedChatResponse.block(
+                                                requestId, "upstream-error", trace, budget.toUsage(usedAfter))));
                     });
         });
     }
@@ -269,22 +275,23 @@ public class ChatCompletionController {
     }
 
     /** Guardy OUTPUT na odpowiedzi modelu i złożenie końcowej odpowiedzi gatewaya. */
-    private ResponseEntity<GuardedChatResponse> buildResponse(
-            String requestId, Action inputAction, OpenAiChatCompletionResponse response, List<ControlTrace> trace) {
+    private ResponseEntity<GuardedChatResponse> buildResponse(String requestId, Action inputAction,
+            OpenAiChatCompletionResponse response, List<ControlTrace> trace, BudgetUsage budgetUsage) {
         ChatMessage reply = extractMessage(response);
         GuardChainResult output =
                 guardChain.run(Stage.OUTPUT, new GuardContext(requestId, reply.content(), null, null));
         trace.addAll(output.trace());
         if (output.blocked()) {
-            return ResponseEntity.status(403).body(GuardedChatResponse.block(requestId, output.blockedBy(), trace));
+            return ResponseEntity.status(403)
+                    .body(GuardedChatResponse.block(requestId, output.blockedBy(), trace, budgetUsage));
         }
 
         var message = new ChatMessage(reply.role(), output.text());
         Usage usage = extractUsage(response);
         boolean redacted = inputAction == Action.REDACT || output.action() == Action.REDACT;
         return ResponseEntity.ok(redacted
-                ? GuardedChatResponse.redact(requestId, message, usage, trace)
-                : GuardedChatResponse.allow(requestId, message, usage, trace));
+                ? GuardedChatResponse.redact(requestId, message, usage, trace, budgetUsage)
+                : GuardedChatResponse.allow(requestId, message, usage, trace, budgetUsage));
     }
 
     private record InputCheck(Action action, String blockedBy, List<ChatMessage> messages, List<ControlTrace> trace) {}

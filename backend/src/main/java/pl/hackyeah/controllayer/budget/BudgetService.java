@@ -49,14 +49,15 @@ public class BudgetService {
      * Zwalnia rezerwację i księguje rzeczywiste zużycie (`usage` z Ollamy jest źródłem prawdy —
      * case file §4.5). Wywoływane też na błąd upstreamu, z {@code actualTokens = 0}, żeby padnięty
      * request nie zjadał budżetu na zawsze zarezerwowanych, nigdy nierozliczonych tokenów.
+     * Zwraca {@code used_tokens} po rozliczeniu — do pokazania klientowi, ile zużył dzisiaj
+     * (`GuardedChatResponse.budget`).
      */
-    Mono<Void> reconcile(String role, Long dailyLimit, long reservedTokens, long actualTokens) {
+    Mono<Long> reconcile(String role, Long dailyLimit, long reservedTokens, long actualTokens) {
         if (dailyLimit == null || reservedTokens == 0) {
-            return Mono.empty();
+            return Mono.just(0L);
         }
-        return Mono.fromRunnable(() -> reconcileBlocking(subjectOf(role), reservedTokens, actualTokens))
-                .subscribeOn(Schedulers.boundedElastic())
-                .then();
+        return Mono.fromCallable(() -> reconcileBlocking(subjectOf(role), reservedTokens, actualTokens))
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     private BudgetReservation reserveBlocking(String subject, long dailyLimit, long tokensToReserve) {
@@ -82,12 +83,17 @@ public class BudgetService {
         return new BudgetReservation(true, tokensToReserve, usedAfter, dailyLimit);
     }
 
-    private void reconcileBlocking(String subject, long reservedTokens, long actualTokens) {
+    private long reconcileBlocking(String subject, long reservedTokens, long actualTokens) {
         LocalDate today = LocalDate.now();
         jdbcTemplate.update(
                 "UPDATE budget_counter SET reserved = GREATEST(reserved - ?, 0), used_tokens = used_tokens + ? "
                         + "WHERE subject = ? AND period_kind = ? AND period_start = ?",
                 reservedTokens, actualTokens, subject, PERIOD_KIND, today);
+
+        Long usedTokens = jdbcTemplate.queryForObject(
+                "SELECT used_tokens FROM budget_counter WHERE subject = ? AND period_kind = ? AND period_start = ?",
+                Long.class, subject, PERIOD_KIND, today);
+        return usedTokens == null ? actualTokens : usedTokens;
     }
 
     /**

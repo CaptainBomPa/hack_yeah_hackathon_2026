@@ -1,6 +1,11 @@
-import type { ControlTrace, GuardedChatResponse } from '../api/types'
+import type { ChatBudget, ControlTrace, GuardedChatResponse } from '../api/types'
 import ActionBadge, { StatusDot } from './ActionBadge'
 import { SpanHighlight } from './HighlightedText'
+
+function budgetPct(budget: ChatBudget): number {
+  if (!budget.cap) return 0
+  return Math.round((budget.used / budget.cap) * 100)
+}
 
 interface Props {
   response: GuardedChatResponse
@@ -48,6 +53,14 @@ export default function DecisionXray({ response, clientLatencyMs, userText }: Pr
               <dt>tokeny</dt>
               <dd>
                 {response.usage.promptTokens} in / {response.usage.completionTokens} out
+              </dd>
+            </>
+          )}
+          {response.budget && response.budget.cap !== null && (
+            <>
+              <dt>budżet dziś</dt>
+              <dd className={budgetPct(response.budget) >= 80 ? 'text-amber-300' : undefined}>
+                {response.budget.used} / {response.budget.cap} ({budgetPct(response.budget)}%)
               </dd>
             </>
           )}

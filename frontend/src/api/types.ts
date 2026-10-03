@@ -41,6 +41,12 @@ export interface ChatUsage {
   completionTokens: number
 }
 
+/** Zużycie dziennego budżetu roli wywołującego — BudgetUsage.java. `cap: null` = rola bez limitu. */
+export interface ChatBudget {
+  used: number
+  cap: number | null
+}
+
 /**
  * Odpowiedź POST /v1/chat/completions — GuardedChatResponse.java.
  * Ten sam kształt przychodzi dla 200, 400 (walidacja), 403 (polityka) i 502 (model nie odpowiada).
@@ -53,6 +59,7 @@ export interface GuardedChatResponse {
   trace: ControlTrace[]
   usage: ChatUsage | null
   // rozszerzenia (kontrakt §5.1)
+  budget?: ChatBudget | null // zużycie dziennego budżetu roli; brak = backend go jeszcze nie wysyłał
   policyVersion?: string
   policyHash?: string
   status?: TechStatus

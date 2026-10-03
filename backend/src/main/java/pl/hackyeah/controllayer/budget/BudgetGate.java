@@ -2,6 +2,7 @@ package pl.hackyeah.controllayer.budget;
 
 import java.util.List;
 import org.springframework.stereotype.Service;
+import pl.hackyeah.controllayer.chat.BudgetUsage;
 import pl.hackyeah.controllayer.chat.ChatMessage;
 import pl.hackyeah.controllayer.chat.ControlTrace;
 import pl.hackyeah.controllayer.policy.PolicyProperties;
@@ -49,10 +50,14 @@ public class BudgetGate {
         });
     }
 
-    /** Zwalnia rezerwację i księguje rzeczywiste zużycie; wołane też na błąd upstreamu z {@code actualTokens = 0}. */
-    public Mono<Void> reconcile(String role, BudgetCheck check, long actualTokens) {
+    /**
+     * Zwalnia rezerwację i księguje rzeczywiste zużycie; wołane też na błąd upstreamu z
+     * {@code actualTokens = 0}. Zwraca zużycie dzienne po rozliczeniu (0, gdy rola bez limitu
+     * albo nic nie było zarezerwowane) — do {@link BudgetCheck#toUsage}.
+     */
+    public Mono<Long> reconcile(String role, BudgetCheck check, long actualTokens) {
         if (!check.allowed() || check.reservedTokens() == 0) {
-            return Mono.empty();
+            return Mono.just(0L);
         }
         return budgetService.reconcile(role, dailyLimitOf(role), check.reservedTokens(), actualTokens);
     }
@@ -84,6 +89,15 @@ public class BudgetGate {
 
         static BudgetCheck allowed(int maxOutputTokens, long reservedTokens, boolean softCapWarning, long dailyLimit) {
             return new BudgetCheck(true, null, null, maxOutputTokens, reservedTokens, softCapWarning, dailyLimit);
+        }
+
+        /** `dailyLimit <= 0` oznacza rolę bez limitu (patrz {@link BudgetGate#dailyLimitOf}) — `cap: null`. */
+        public BudgetUsage toUsage(long used) {
+            return new BudgetUsage(used, dailyLimit <= 0 ? null : dailyLimit);
+        }
+
+        public boolean isDailyCapExceeded() {
+            return DAILY_CAP_POLICY.equals(blockedBy);
         }
 
         /** 413 dla zbyt dużego wejścia (rozmiar), 429 dla wyczerpanego budżetu (jak rate limit). */

@@ -14,20 +14,25 @@ public record GuardedChatResponse(
         ChatMessage message, // brak, gdy action == "block"
         String blockedBy,
         List<ControlTrace> trace,
-        Usage usage) {
+        Usage usage,
+        BudgetUsage budget) { // null, gdy rola wywołującego nie ma skonfigurowanego limitu
 
     public static GuardedChatResponse allow(
-            String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace) {
-        return new GuardedChatResponse(requestId, "allow", message, null, trace, usage);
+            String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace, BudgetUsage budget) {
+        return new GuardedChatResponse(requestId, "allow", message, null, trace, usage, budget);
     }
 
     public static GuardedChatResponse redact(
-            String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace) {
-        return new GuardedChatResponse(requestId, "redact", message, null, trace, usage);
+            String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace, BudgetUsage budget) {
+        return new GuardedChatResponse(requestId, "redact", message, null, trace, usage, budget);
     }
 
     public static GuardedChatResponse block(
-            String requestId, String blockedBy, List<ControlTrace> trace) {
-        return new GuardedChatResponse(requestId, "block", null, blockedBy, trace, null);
+            String requestId, String blockedBy, List<ControlTrace> trace, BudgetUsage budget) {
+        return new GuardedChatResponse(requestId, "block", null, blockedBy, trace, null, budget);
+    }
+
+    public static GuardedChatResponse block(String requestId, String blockedBy, List<ControlTrace> trace) {
+        return block(requestId, blockedBy, trace, null);
     }
 }

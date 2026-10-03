@@ -28,6 +28,14 @@ function abortableDelay<T>(value: T, ms: number, signal?: AbortSignal): Promise<
 const MOCK_MODELS = ['qwen2.5:1.5b-instruct-q4_K_M', 'qwen2.5:0.5b']
 const POLICY = { policyVersion: 'v3', policyHash: 'a1b2c3d' }
 
+/** Symuluje rosnące dzienne zużycie budżetu (BudgetUsage.java) w trybie mock. */
+const MOCK_BUDGET_CAP = 20000
+let mockBudgetUsed = 1180
+function nextMockBudget() {
+  mockBudgetUsed += 36
+  return { used: mockBudgetUsed, cap: MOCK_BUDGET_CAP }
+}
+
 function spansOf(text: string, re: RegExp, label: string): TextSpan[] {
   return [...text.matchAll(new RegExp(re, 'g'))].map((m) => ({
     start: m.index ?? 0,
@@ -200,6 +208,7 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
       message: { role: 'assistant', content: `(mock) Odpowiedź modelu ${model} na: "${last}"` },
       trace: [allowlist, pii, semantic, { ...pii, policy: 'pii.output', stage: 'output', latencyMs: 1 }],
       usage: { promptTokens: 12, completionTokens: 24 },
+      budget: nextMockBudget(),
       ...POLICY,
       status: 'ok',
       latency: { totalMs: 1290, upstreamMs: 1240 },
