@@ -67,16 +67,47 @@ export interface ModelOption {
   status?: 'available' | 'unavailable'
 }
 
-/** Wpis audit logu — nigdy surowe PII, tylko hash zredagowanego fragmentu (VISION.md §5). */
+/**
+ * Rekord audytu — AuditEventView.java (GET /api/audit/events). Bez treści promptów i odpowiedzi
+ * (VISION.md §6); `recordHash` to ogniwo łańcucha HMAC, sprawdzane przez GET /api/audit/verify.
+ */
 export interface AuditEvent {
-  id: string
+  seq: number
+  requestId: string
   timestamp: string
-  callerId: string
-  sessionId?: string
-  policy: string
+  principal: string | null
+  role: string | null
+  sessionId: string | null
+  model: string | null
   action: GuardAction
-  redactedHash?: string
-  policyVersion: string
+  blockedBy: string | null
+  httpStatus: number
+  latencyMs: number
+  usage: ChatUsage | null
+  messageCount: number
+  trace: ControlTrace[]
+  recordHash: string
+}
+
+export interface AuditPage {
+  items: AuditEvent[]
+  nextCursor: number | null
+}
+
+export interface AuditFilters {
+  action?: string
+  principal?: string
+  model?: string
+  blockedBy?: string
+  sessionId?: string
+}
+
+/** GET /api/audit/verify — AuditService.VerifyResult. */
+export interface AuditVerifyResult {
+  valid: boolean
+  checked: number
+  brokenAtSeq: number | null
+  reason: string | null
 }
 
 export interface DashboardStats {

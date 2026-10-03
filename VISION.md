@@ -235,7 +235,12 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
 - `backend/` — działający szkielet Java 25/Spring Boot 4 z profilami H2/PostgreSQL, Flyway,
   Dockerfilem i **działającym** `POST /v1/chat/completions` (allowlista modeli + wywołanie
   providera + `GuardedChatResponse`, zob. §7) — bez reszty decision pipeline;
-- `frontend/` — działający szkielet widoków i mocków, bez podłączonego docelowego API;
+- audyt: **działa e2e** — każde żądanie `/v1/chat/completions` (także allow i odmowy) trafia do
+  tabeli `audit_event` (Flyway V3) z pełną ścieżką kontroli, bez treści wiadomości, w łańcuchu
+  HMAC (wykrywanie modyfikacji, `GET /api/audit/verify`); zapis przed odpowiedzią, fail-closed
+  (503) przy awarii; API `/api/audit/**` (rola ADMIN) i ekran Audit log we frontendzie;
+  na Postgresie dodatkowo trigger append-only (zob. `docs/deterministic/27-audit-logging.md`);
+- `frontend/` — Playground (czat + X-ray) i Audit log podłączone do backendu; reszta widoków na mockach;
 - provider analizy semantycznej ani opcjonalny lokalny sidecar nie mają jeszcze implementacji;
 - `docker-compose.yml` — docelowo wdrażany w całości na Raspberry Pi: baza, backend i Ollama
   żyją w jednej sieci docker na tym samym hoście (backend łączy się z Ollamą przez nazwę
@@ -243,7 +248,7 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
   (np. `bootRun` na laptopie z własną Ollamą pod `localhost:11434`, czyli wartość domyślna);
 - uwierzytelnianie i autoryzacja: plan w `docs/auth/`, implementacja jeszcze się nie zaczęła;
 - termin zgłoszenia projektu: 4.10.2026, 23:00 (RULES, pkt 5);
-- decision pipeline, polityki, guardraile, audyt i data-driven test suite są jeszcze do
+- decision pipeline, polityki, guardraile i data-driven test suite są jeszcze do
   zaimplementowania.
 
 Każda zmiana architektury, technologii, priorytetu wyróżników albo kontraktu publicznego wymaga

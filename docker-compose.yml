@@ -32,8 +32,14 @@ services:
       SPRING_DATASOURCE_USERNAME: hackyeah
       SPRING_DATASOURCE_PASSWORD: hackyeah
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      # Klucz łańcucha HMAC audytu (docs/deterministic/27-audit-logging.md); w prod ustawić własny.
+      CONTROL_LAYER_AUDIT_CHAIN_KEY: ${AUDIT_CHAIN_KEY:-change-me-audit-chain-key}
     ports:
       - "8000:8000"
+    volumes:
+      # Polityka (config/policy.yaml) z hosta: bez niej backend odmawia każdego modelu, a jury
+      # może ją edytować bez przebudowy obrazu. users.yaml w profilu prod jest ignorowany.
+      - ./backend/config:/app/config:ro
     depends_on:
       db:
         condition: service_healthy

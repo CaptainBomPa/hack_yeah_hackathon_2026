@@ -5,9 +5,9 @@ info:
   description: |
     Kontrakt publiczny gatewaya (VISION.md §7). Dokument opisuje stan zaimplementowany w backendzie.
 
-    **Zaimplementowane:** `POST /v1/chat/completions`, `GET /actuator/health`.
-    **Jeszcze nie:** `/api/**` (dashboard, polityki, audyt, modele), nagłówek `X-Session-Id`
-    (front go wysyła, backend jeszcze nie czyta), formularz logowania.
+    **Zaimplementowane:** `POST /v1/chat/completions` (+ nagłówek `X-Session-Id`, zapisywany w audycie),
+    `GET /actuator/health`, audyt `/api/audit/**` (lista, rekord, eksport CSV/JSON, weryfikacja łańcucha).
+    **Jeszcze nie:** reszta `/api/**` (dashboard, polityki, modele), formularz logowania.
 
     **Uwierzytelnianie:** HTTP Basic na kontach lokalnych z rolami (docs/auth/). Konta demo są w
     `backend/config/users.yaml` i działają tylko w profilu `local`. Rola konta decyduje, które
@@ -107,6 +107,74 @@ paths:
                   status:
                     type: string
                     example: UP
+  /api/audit/events:
+    get:
+      summary: Lista rekordów audytu (najnowsze pierwsze)
+      description: |
+        Rola ADMIN. Jeden rekord na żądanie /v1/chat/completions (także allow) z pełną ścieżką
+        kontroli; bez treści promptów i odpowiedzi. Paginacja keyset: `before` = `nextCursor`.
+      operationId: auditEvents
+      parameters:
+        - { name: action, in: query, schema: { type: string } }
+        - { name: principal, in: query, schema: { type: string } }
+        - { name: model, in: query, schema: { type: string } }
+        - { name: blockedBy, in: query, schema: { type: string } }
+        - { name: sessionId, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: before, in: query, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        '200':
+          description: Strona rekordów.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/AuditEvent' } }
+                  nextCursor: { type: integer, format: int64, nullable: true }
+        '401': { description: Brak uwierzytelnienia. }
+        '403': { description: Rola inna niż ADMIN. }
+  /api/audit/events/{requestId}:
+    get:
+      summary: Jeden rekord audytu po requestId z odpowiedzi czatu
+      operationId: auditEvent
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Rekord.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditEvent' }
+        '404': { description: Brak rekordu. }
+  /api/audit/export:
+    get:
+      summary: Eksport audytu (CSV albo JSON) z tymi samymi filtrami co lista
+      description: Maks. 10 000 rekordów. Komórki CSV zaczynające się od = + - @ dostają prefiks ' (formula injection).
+      operationId: auditExport
+      parameters:
+        - { name: format, in: query, schema: { type: string, enum: [csv, json], default: csv } }
+      responses:
+        '200': { description: Plik do pobrania (Content-Disposition attachment). }
+  /api/audit/verify:
+    get:
+      summary: Weryfikacja łańcucha HMAC audytu
+      description: Przechodzi wszystkie rekordy i wskazuje pierwszy zmodyfikowany albo wyrwany z łańcucha.
+      operationId: auditVerify
+      responses:
+        '200':
+          description: Wynik weryfikacji.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid: { type: boolean }
+                  checked: { type: integer, format: int64 }
+                  brokenAtSeq: { type: integer, format: int64, nullable: true }
+                  reason: { type: string, nullable: true, example: record modified }
 components:
   securitySchemes:
     basicAuth:
@@ -114,6 +182,25 @@ components:
       scheme: basic
       description: Konto lokalne z rolą (app_user). Hasło jest sprawdzane przez BCrypt.
   schemas:
+    AuditEvent:
+      type: object
+      description: Rekord audytu (AuditEventView.java). Bez treści wiadomości.
+      properties:
+        seq: { type: integer, format: int64 }
+        requestId: { type: string }
+        timestamp: { type: string, format: date-time }
+        principal: { type: string, nullable: true }
+        role: { type: string, nullable: true }
+        sessionId: { type: string, nullable: true, description: Z nagłówka X-Session-Id, zsanitizowany. }
+        model: { type: string, nullable: true }
+        action: { type: string, example: redact }
+        blockedBy: { type: string, nullable: true }
+        httpStatus: { type: integer }
+        latencyMs: { type: integer, format: int64 }
+        usage: { $ref: '#/components/schemas/Usage' }
+        messageCount: { type: integer }
+        trace: { type: array, items: { $ref: '#/components/schemas/ControlTrace' } }
+        recordHash: { type: string, description: HMAC-SHA256 ogniwa łańcucha. }
     ChatMessage:
       type: object
       required: [role, content]

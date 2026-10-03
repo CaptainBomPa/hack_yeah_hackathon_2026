@@ -245,9 +245,10 @@ ArenaRun = {
 
 | Metoda | Ścieżka | Odpowiedź |
 |---|---|---|
-| GET | `/api/events?action&policy&sessionId&model&from&to&cursor&limit` | `{ items: AuditEvent[], nextCursor }` |
-| GET | `/api/events/{requestId}` | `AuditEvent` z pełnym `trace` |
-| GET | `/api/events/export?format=csv\|json&<filtry>` | plik |
+| GET | `/api/audit/events?action&principal&model&blockedBy&sessionId&from&to&before&limit` | `{ items: AuditEvent[], nextCursor }` (✅ działa) |
+| GET | `/api/audit/events/{requestId}` | `AuditEvent` z pełnym `trace` (✅) |
+| GET | `/api/audit/verify` | `{ valid, checked, brokenAtSeq, reason }` (✅) |
+| GET | `/api/audit/export?format=csv\|json&<filtry>` | plik (✅) |
 
 ```ts
 AuditEvent = { requestId, timestamp, callerId?, sessionId?, model, action, blockedBy?, status,

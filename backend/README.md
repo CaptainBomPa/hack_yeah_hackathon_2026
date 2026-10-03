@@ -38,6 +38,32 @@ docker compose up -d --build db backend             # całość w kontenerach (p
 
 Gateway słucha na `http://localhost:8000`, health: `/actuator/health`.
 
+## Przebudowa po zmianach (PowerShell, z katalogu głównego repo)
+
+Docker Desktop musi być uruchomiony. Gotowy skrypt buduje obrazy, uruchamia kontenery
+i czeka na gotowość usług; przerywa przy błędzie builda. Zachowuje bazę i pobrane modele.
+
+```powershell
+# Po zmianach w backendzie (Java, resources, konfiguracja builda):
+.\scripts\rebuild.ps1 -Target backend
+
+# Po zmianach w UI:
+.\scripts\rebuild.ps1 -Target frontend
+
+# Cały stack:
+.\scripts\rebuild.ps1
+
+# Logi backendu (Ctrl+C kończy podgląd):
+docker compose logs -f --tail 100 backend
+```
+
+Bez skryptu, po zmianie backendu: `docker compose up -d --build backend`.
+Skrypt korzysta z cache Dockera i nie wyłącza cache Gradle.
+Samo `docker compose restart backend` nie buduje nowego kodu. Build Dockerowy pomija testy;
+testy backendu uruchamiaj osobno: `.\gradlew.bat :backend:test`.
+UI jest na http://localhost:3000. Gotowość modeli przy pierwszym uruchomieniu sprawdzisz
+przez `docker compose logs --tail 20 ollama-init` (kończy się sukcesem).
+
 `POST /v1/chat/completions` woła skonfigurowany model (`{model, messages}` na wejściu,
 `GuardedChatResponse` na wyjściu — kontrakt w `frontend/src/api/types.ts`). Dziś jedyną realną
 kontrolą w `trace` jest allowlista modeli (`control-layer.models` w `application.yml`); reszta

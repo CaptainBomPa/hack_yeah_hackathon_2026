@@ -1,6 +1,7 @@
 package pl.hackyeah.controllayer.chat;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -15,7 +16,11 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import pl.hackyeah.controllayer.audit.AuditEntry;
+import pl.hackyeah.controllayer.audit.AuditLog;
+import pl.hackyeah.controllayer.audit.AuditProperties;
 import pl.hackyeah.controllayer.chat.upstream.OllamaChatClient;
 import pl.hackyeah.controllayer.chat.upstream.OpenAiChatCompletionResponse;
 import pl.hackyeah.controllayer.chat.upstream.UpstreamModelException;
@@ -45,31 +50,84 @@ public class ChatCompletionController {
     private static final String MODEL_ALLOWLIST_POLICY = "model.allowlist";
     private static final String MODEL_ACCESS_POLICY = "policy.model-access";
     private static final String AUTH_POLICY = "auth.required";
+    private static final String AUDIT_POLICY = "audit.write";
     private static final String ROLE_PREFIX = "ROLE_";
 
     private final ModelCatalog modelCatalog;
     private final ModelAccessPolicy modelAccessPolicy;
     private final OllamaChatClient upstreamClient;
     private final GuardChain guardChain;
+    private final AuditLog auditLog;
+    private final AuditProperties auditProperties;
 
     public ChatCompletionController(ModelCatalog modelCatalog, ModelAccessPolicy modelAccessPolicy,
-            OllamaChatClient upstreamClient, GuardChain guardChain) {
+            OllamaChatClient upstreamClient, GuardChain guardChain, AuditLog auditLog,
+            AuditProperties auditProperties) {
         this.modelCatalog = modelCatalog;
         this.modelAccessPolicy = modelAccessPolicy;
         this.upstreamClient = upstreamClient;
         this.guardChain = guardChain;
+        this.auditLog = auditLog;
+        this.auditProperties = auditProperties;
     }
 
     @PostMapping("/v1/chat/completions")
     public Mono<ResponseEntity<GuardedChatResponse>> chatCompletions(
-            @Valid @RequestBody ChatCompletionRequest request) {
+            @Valid @RequestBody ChatCompletionRequest request,
+            @RequestHeader(value = "X-Session-Id", required = false) String sessionId) {
         String requestId = UUID.randomUUID().toString();
+        Instant occurredAt = Instant.now();
         long startedAt = System.nanoTime();
 
         return ReactiveSecurityContextHolder.getContext()
                 .flatMap(context -> Mono.justOrEmpty(callerOf(context.getAuthentication())))
-                .flatMap(caller -> complete(request, caller, requestId, startedAt))
-                .switchIfEmpty(Mono.fromSupplier(() -> unauthenticated(requestId)));
+                .flatMap(caller -> complete(request, caller, requestId, startedAt)
+                        .map(response -> new Outcome(caller, response)))
+                .switchIfEmpty(Mono.fromSupplier(() -> new Outcome(null, unauthenticated(requestId))))
+                .flatMap(outcome -> audited(outcome, request, sessionId, requestId, occurredAt, startedAt));
+    }
+
+    private record Outcome(Caller caller, ResponseEntity<GuardedChatResponse> response) {}
+
+    /**
+     * Zapis decyzji do audytu przed wysłaniem odpowiedzi (AUDIT-001). Bez treści wiadomości —
+     * tylko metadane i ścieżka kontroli. Gdy zapis się nie uda, a audyt jest fail-closed,
+     * klient dostaje 503 zamiast odpowiedzi modelu (AUDIT-008).
+     */
+    private Mono<ResponseEntity<GuardedChatResponse>> audited(Outcome outcome, ChatCompletionRequest request,
+            String sessionId, String requestId, Instant occurredAt, long startedAt) {
+        GuardedChatResponse body = outcome.response().getBody();
+        Caller caller = outcome.caller();
+        var entry = new AuditEntry(
+                requestId,
+                occurredAt,
+                caller == null ? null : caller.login(),
+                caller == null ? null : caller.role(),
+                sessionId,
+                request.model(),
+                body.action(),
+                body.blockedBy(),
+                outcome.response().getStatusCode().value(),
+                elapsedMillis(startedAt),
+                body.usage() == null ? null : body.usage().promptTokens(),
+                body.usage() == null ? null : body.usage().completionTokens(),
+                request.messages().size(),
+                body.trace());
+        return Mono.fromRunnable(() -> auditLog.append(entry))
+                .subscribeOn(Schedulers.boundedElastic())
+                .thenReturn(outcome.response())
+                .onErrorResume(error -> {
+                    log.error("requestId={} audit write failed failClosed={}",
+                            requestId, auditProperties.failClosed(), error);
+                    if (!auditProperties.failClosed()) {
+                        return Mono.just(outcome.response());
+                    }
+                    var trace = new ArrayList<>(body.trace());
+                    trace.add(new ControlTrace(AUDIT_POLICY, "deterministic", "block", elapsedMillis(startedAt),
+                            "audit log unavailable (fail-closed)"));
+                    return Mono.just(ResponseEntity.status(503)
+                            .body(GuardedChatResponse.block(requestId, AUDIT_POLICY, trace)));
+                });
     }
 
     private Mono<ResponseEntity<GuardedChatResponse>> complete(ChatCompletionRequest request, Caller caller,

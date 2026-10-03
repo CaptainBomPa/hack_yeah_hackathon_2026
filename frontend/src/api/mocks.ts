@@ -2,6 +2,9 @@ import type { ChatParams } from './client'
 import { newId } from '../lib/id'
 import type {
   AuditEvent,
+  AuditFilters,
+  AuditPage,
+  AuditVerifyResult,
   ControlTrace,
   DashboardStats,
   GuardedChatResponse,
@@ -229,21 +232,58 @@ export function stats(): Promise<DashboardStats> {
   })
 }
 
-export function auditEvents(): Promise<AuditEvent[]> {
-  const policies = ['pii.email', 'pii.credit_card', 'semantic.jailbreak', 'deterministic.code_injection']
-  const actions = ['redact', 'redact', 'block', 'block'] as const
-  return delay(
-    Array.from({ length: 20 }, (_, i) => ({
-      id: `evt-${i}`,
-      timestamp: new Date(Date.now() - i * 60_000).toISOString(),
-      callerId: `agent-${(i % 3) + 1}`,
-      sessionId: `sess-${(i % 4) + 1}`,
-      policy: policies[i % 4],
-      action: actions[i % 4],
-      redactedHash: `sha256:${(i * 2654435761).toString(16).slice(0, 12)}`,
-      policyVersion: 'v3',
-    })),
+const MOCK_AUDIT: AuditEvent[] = Array.from({ length: 120 }, (_, i) => {
+  const seq = 120 - i
+  const kind = seq % 5
+  const action = (['allow', 'redact', 'block', 'allow', 'block'] as const)[kind]
+  const blockedBy = kind === 2 ? 'model.allowlist' : kind === 4 ? 'policy.model-access' : null
+  const trace: ControlTrace[] = [
+    { policy: 'model.allowlist', kind: 'deterministic', action: kind === 2 ? 'block' : 'allow', latencyMs: 0, detail: kind === 2 ? 'model not allowed: llama3:70b' : null },
+    ...(kind === 4
+      ? [{ policy: 'policy.model-access', kind: 'deterministic' as const, action: 'block' as const, latencyMs: 0, detail: 'role agent may not use model qwen2.5:0.5b' }]
+      : []),
+    ...(kind === 1 ? [{ policy: 'PII-001', kind: 'deterministic' as const, action: 'redact' as const, latencyMs: 1, detail: '1 PESEL' }] : []),
+  ]
+  return {
+    seq,
+    requestId: `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`,
+    timestamp: new Date(Date.now() - i * 47_000).toISOString(),
+    principal: ['chat1', 'chat2', 'agent-runner', 'admin'][seq % 4],
+    role: ['chat', 'chat', 'agent', 'admin'][seq % 4],
+    sessionId: `sess-${(seq % 6) + 1}`,
+    model: kind === 2 ? 'llama3:70b' : kind === 4 ? 'qwen2.5:0.5b' : 'qwen2.5:1.5b-instruct-q4_K_M',
+    action,
+    blockedBy,
+    httpStatus: action === 'block' ? 403 : 200,
+    latencyMs: action === 'block' ? 2 : 900 + ((seq * 137) % 2400),
+    usage: action === 'block' ? null : { promptTokens: 20 + (seq % 40), completionTokens: 30 + (seq % 90) },
+    messageCount: 1 + (seq % 5),
+    trace,
+    recordHash: (seq * 2654435761).toString(16).padStart(64, 'a').slice(0, 64),
+  }
+})
+
+export function auditEvents(filters: AuditFilters, before?: number | null): Promise<AuditPage> {
+  const matches = MOCK_AUDIT.filter(
+    (e) =>
+      (!before || e.seq < before) &&
+      (!filters.action || e.action === filters.action) &&
+      (!filters.principal || e.principal === filters.principal) &&
+      (!filters.model || e.model === filters.model) &&
+      (!filters.blockedBy || e.blockedBy === filters.blockedBy) &&
+      (!filters.sessionId || e.sessionId === filters.sessionId),
   )
+  const items = matches.slice(0, 50)
+  return delay({ items, nextCursor: matches.length > 50 ? items[items.length - 1].seq : null })
+}
+
+export function auditEvent(requestId: string): Promise<AuditEvent> {
+  const event = MOCK_AUDIT.find((e) => e.requestId === requestId)
+  return event ? delay(event) : Promise.reject(new Error('404'))
+}
+
+export function auditVerify(): Promise<AuditVerifyResult> {
+  return delay({ valid: true, checked: MOCK_AUDIT.length, brokenAtSeq: null, reason: null })
 }
 
 let mockPolicy = `version: v3

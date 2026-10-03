@@ -1,5 +1,8 @@
 import type {
   AuditEvent,
+  AuditFilters,
+  AuditPage,
+  AuditVerifyResult,
   ChatMessage,
   DashboardStats,
   GuardedChatResponse,
@@ -16,7 +19,7 @@ export type Feature = 'chat' | 'models' | 'stats' | 'audit' | 'policy'
  * Funkcje, które backend już implementuje — wołają żywy gateway mimo VITE_USE_MOCKS=true.
  * Dopisywać tu kolejne, gdy powstaną ich endpointy. VITE_LIVE_FEATURES nadpisuje tę listę.
  */
-const IMPLEMENTED_IN_BACKEND: Feature[] = ['chat']
+const IMPLEMENTED_IN_BACKEND: Feature[] = ['chat', 'audit']
 
 const LIVE_FEATURES = new Set(
   import.meta.env.VITE_LIVE_FEATURES !== undefined
@@ -59,14 +62,33 @@ function isGuardedChatResponse(body: unknown): body is GuardedChatResponse {
   )
 }
 
+/** 403 z /api/** — backend wymaga roli ADMIN (SecurityConfig). */
+export class ForbiddenError extends Error {
+  constructor() {
+    super('Brak uprawnień — ten widok wymaga konta z rolą admin')
+    this.name = 'ForbiddenError'
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
   if (res.status === 401) throw new AuthRequiredError()
+  if (res.status === 403) throw new ForbiddenError()
+  if (res.status === 404 && path.startsWith('/api/'))
+    throw new Error(`Backend nie ma endpointu ${path.split('?')[0]} — działa starsza wersja? Przebuduj backend.`)
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`)
   return res.json() as Promise<T>
+}
+
+function auditQuery(params: Record<string, string | number | undefined>): string {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') query.set(key, String(value))
+  }
+  return query.toString()
 }
 
 export interface ChatParams {
@@ -133,12 +155,21 @@ export const api = {
     if (isMocked('stats')) return mocks.stats()
     return request('/api/stats')
   },
-  auditEvents(): Promise<AuditEvent[]> {
-    if (isMocked('audit')) return mocks.auditEvents()
-    return request('/api/audit')
+  /** GET /api/audit/events — najnowsze pierwsze; `before` = `nextCursor` z poprzedniej strony. */
+  auditEvents(filters: AuditFilters = {}, before?: number | null): Promise<AuditPage> {
+    if (isMocked('audit')) return mocks.auditEvents(filters, before)
+    return request(`/api/audit/events?${auditQuery({ ...filters, before: before ?? undefined, limit: 50 })}`)
   },
-  auditExportUrl(format: 'csv' | 'json'): string {
-    return `/api/audit/export?format=${format}`
+  auditEvent(requestId: string): Promise<AuditEvent> {
+    if (isMocked('audit')) return mocks.auditEvent(requestId)
+    return request(`/api/audit/events/${encodeURIComponent(requestId)}`)
+  },
+  auditVerify(): Promise<AuditVerifyResult> {
+    if (isMocked('audit')) return mocks.auditVerify()
+    return request('/api/audit/verify')
+  },
+  auditExportUrl(format: 'csv' | 'json', filters: AuditFilters = {}): string {
+    return `/api/audit/export?${auditQuery({ ...filters, format })}`
   },
   policy(): Promise<PolicyInfo> {
     if (isMocked('policy')) return mocks.policy()

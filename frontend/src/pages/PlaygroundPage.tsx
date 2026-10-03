@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { api, AuthRequiredError, GatewayUnavailableError, isMocked } from '../api/client'
 import type { ChatMessage, GuardedChatResponse, ModelOption } from '../api/types'
 import ActionBadge from '../components/ActionBadge'
@@ -231,7 +232,15 @@ export default function PlaygroundPage() {
           {selected?.error && <p className="text-sm text-red-400">{selected.error}</p>}
           {selected?.cancelled && <p className="text-sm text-slate-500">Żądanie anulowane.</p>}
           {selected?.response && (
-            <DecisionXray response={selected.response} clientLatencyMs={selected.latencyMs} userText={selected.user} />
+            <>
+              <DecisionXray response={selected.response} clientLatencyMs={selected.latencyMs} userText={selected.user} />
+              <Link
+                to={`/audit?requestId=${encodeURIComponent(selected.response.requestId)}`}
+                className="mt-4 inline-block text-sm text-indigo-300 hover:underline"
+              >
+                Zobacz w audycie →
+              </Link>
+            </>
           )}
         </aside>
       </div>
