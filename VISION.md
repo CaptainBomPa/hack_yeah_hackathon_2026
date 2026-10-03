@@ -162,7 +162,8 @@ hashy i bezpiecznych fragmentów. Eksport CSV/JSON musi zachowywać te same zasa
 ## 7. API i routing
 
 Wejściem dla playgroundu jest zgodny z OpenAI endpoint `POST /v1/chat/completions`, wzbogacony
-o identyfikator żądania i trace kontroli. API dashboardu korzysta z `/api/**`.
+o identyfikator żądania i trace kontroli. API dashboardu korzysta z `/api/**`. Kontrakt
+zaimplementowanych endpointów (OpenAPI 3.0): [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
 
 `/v1/chat/completions` **działa** (zastąpił tymczasowy passthrough `/llm/**`): waliduje `model`
 wobec allowlisty (`control-layer.models` w `backend/src/main/resources/application.yml` —
