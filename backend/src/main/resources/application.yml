@@ -38,7 +38,19 @@ control-layer:
   guards:
     enabled: true
     rules:
-      PII-001: { enabled: true, order: 100 }
+      # Silnik PII z konceptami Presidio (docs/deterministic/pii-recognizers.md). Recognizery
+      # PII-001..PII-008 są danymi w `pack`; tu tylko próg i nadpisania akcji per id recognizera.
+      PII-RECOGNIZERS:
+        enabled: true
+        order: 100
+        params:
+          pack: classpath:rules/pii/recognizers.yaml
+          threshold: 0.5
+          contextPrefixWords: 5
+          contextSuffixWords: 3
+          disabledRecognizers: ""
+          blockRecognizers: ""     # np. "PII-007" = karta płatnicza blokuje zamiast redagować
+          monitorRecognizers: ""   # tylko raport w trace, bez redakcji
       # SEM-001: kontrola semantyczna przez sidecar (semantic-sidecar/). Domyślnie WYŁĄCZONA, bo bez sidecara
       # (fail-closed) blokowałaby każde żądanie. W docker-compose.yml włącza ją SEMANTIC_GUARD_ENABLED=true.
       # blockThreshold: skalibrowany wynik 0-1, dobrany z docelowego odsetka fałszywych alarmów (nie "0.5"), zob.

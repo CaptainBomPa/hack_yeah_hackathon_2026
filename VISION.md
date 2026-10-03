@@ -178,8 +178,14 @@ poziomie filtrów Gateway. Inne route'y (np. do sidecara) mogą nadal być dekla
 
 Kontrole deterministyczne to beany `Guard` (`backend/.../guard`) spięte w łańcuch `GuardChain`,
 wołany z kontrolera przed (`INPUT`) i po (`OUTPUT`) wywołaniu modelu. Włączane i parametryzowane
-w `control-layer.guards` (`application.yml`); guard bez wpisu jest wyłączony. Pierwszy działający:
-`PII-001` (PESEL). Instrukcja: `docs/deterministic/how-to-write-a-rule.md`.
+w `control-layer.guards` (`application.yml`); guard bez wpisu jest wyłączony. Instrukcja:
+`docs/deterministic/how-to-write-a-rule.md`. PII obsługuje jeden guard `PII-RECOGNIZERS`: silnik
+z konceptami Microsoft Presidio (recognizery jako dane w formacie YAML Presidio, nazwane walidatory
+checksum, słowa kontekstowe, score i próg, rozwiązywanie konfliktów, operatory anonymizera),
+zaimplementowany w Javie bez NLP. Recognizery `PII-001..PII-008` są w
+`backend/src/main/resources/rules/pii/recognizers.yaml`, a ich id trafiają do `trace`. Samo
+Presidio nie działa w ścieżce deterministycznej; może być jedynie implementacją providera
+semantycznego dla NER (imiona, adresy). Szczegóły: `docs/deterministic/pii-recognizers.md`.
 
 **Logowanie (docs/auth, bez SSO i zewnętrznego IdP — działa offline):** konta lokalne z
 `backend/config/users.yaml`, zakładane w bazie przy starcie (hasła BCrypt). Przeglądarka loguje się
