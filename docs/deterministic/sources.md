@@ -33,7 +33,31 @@ Konwencje:
 
 ## 2. MITRE
 
-**Brak.** Żaden z plików case nie zawiera w sekcji 15 źródeł MITRE (ATT&CK, ATLAS, CWE jako strona MITRE, CAPEC). Jedyne odniesienie pokrewne: CWE-117 (log injection) jest cytowane wyłącznie pośrednio przez OpenSSF Secure Coding Guide i CodeQL (patrz sekcja 6, case 27), nie przez MITRE.
+Źródła MITRE nie pochodzą z sekcji 15 plików case (tam ich nie było) — zostały dodane osobno i **zweryfikowane 2026-10-03** bezpośrednio w danych ATLAS (repo `mitre-atlas/atlas-data`, plik `dist/v6/ATLAS-2026.09.yaml`, `modified-date` 2026-09-15; release GitHub `v2026.09`, 2026-09-15). ID i nazwy technik poniżej odczytano z tego pliku (nazwy wg taksonomii v6; numery ID zgodne z wcześniejszymi wersjami, nazwy części technik różnią się od starszych opisów, np. „Denial of AI Service" = dawniej „Denial of ML Service"). Strona `atlas.mitre.org/matrices/ATLAS` zwróciła 404, a `atlas.mitre.org` bez treści szczegółowej — dlatego źródłem jest repozytorium danych. Mapowanie case -> technika to **nasza interpretacja** (kontrola mitiguje daną technikę), nie twierdzenie MITRE. Case 27 (audyt) nie ma bezpośredniej techniki ATLAS — wspiera wykrywanie/forensics wszystkich pozostałych.
+
+| Nazwa | Link | Data | Czego dotyczy | Case'y | Typ dowodu |
+|---|---|---|---|---|---|
+| MITRE ATLAS — dane (v6, wydanie 2026.09) | https://github.com/mitre-atlas/atlas-data/blob/main/dist/v6/ATLAS-2026.09.yaml ; strona: https://atlas.mitre.org/ | 2026-09-15 | Taksonomia taktyk/technik ataków na systemy AI; źródło wszystkich ID poniżej | 01–26 | `RESEARCH` (taksonomia) |
+| AML.T0051 LLM Prompt Injection (.000 Direct, .001 Indirect, .002 Triggered) | j.w. (plik v6) ; https://atlas.mitre.org/techniques/AML.T0051 (URL niepobrany) | 2026-09-15 | Prompt injection bezpośredni/pośredni/wyzwalany | 08, 17, 21, 26 | `RESEARCH` |
+| AML.T0054 LLM Jailbreak | j.w. | 2026-09-15 | Jailbreak | 26 | `RESEARCH` |
+| AML.T0068 LLM Prompt Obfuscation ; AML.T0069.000 Special Character Sets | j.w. | 2026-09-15 | Obfuskacja/znaki specjalne omijające filtry | 21, 26 | `RESEARCH` |
+| AML.T0056 Extract LLM System Prompt | j.w. | 2026-09-15 | Wyciek system promptu | 19, 26 | `RESEARCH` |
+| AML.T0057 LLM Data Leakage ; AML.T0024 Exfiltration via AI Inference API (.000 Infer Training Data Membership, .001 Invert AI Model) | j.w. | 2026-09-15 | Wyciek danych w odpowiedziach / z modelu | 01, 02, 06, 19 | `RESEARCH` |
+| AML.T0055 Unsecured Credentials ; AML.T0083 Credentials from AI Agent Configuration ; AML.T0098 AI Agent Tool Credential Harvesting | j.w. | 2026-09-15 | Sekrety/poświadczenia dostępne dla agenta | 02, 12 | `RESEARCH` |
+| AML.T0049 Exploit Public-Facing Application ; AML.T0091 Use Alternate Authentication Material (.000 Application Access Token) | j.w. | 2026-09-15 | Atak na wystawioną aplikację, kradzież/nadużycie tokenów | 03, 10, 11 | `RESEARCH` |
+| AML.T0053 AI Agent Tool Invocation ; AML.T0101 Data Destruction via AI Agent Tool Invocation | j.w. | 2026-09-15 | Nadużycie narzędzi agenta, destrukcyjne wywołania | 04, 07, 08, 09, 10, 11, 15, 17 | `RESEARCH` |
+| AML.T0050 Command and Scripting Interpreter | j.w. | 2026-09-15 | Wykonanie poleceń/skryptów przez agenta | 08, 11 | `RESEARCH` |
+| AML.T0036 Data from Information Repositories ; AML.T0085 Data from AI Services (.000 RAG Databases, .001 AI Agent Tools) | j.w. | 2026-09-15 | Odczyt danych z repozytoriów/usług (ścieżki, izolacja tenantów) | 06, 09 | `RESEARCH` |
+| AML.T0086 Exfiltration via AI Agent Tool Invocation ; AML.T0077 LLM Response Rendering ; AML.T0025 Exfiltration via Cyber Means | j.w. | 2026-09-15 | Kanały exfiltracji (obrazy markdown, linki, DNS, narzędzia) | 17, 20 | `RESEARCH` |
+| AML.T0110 AI Agent Tool Poisoning ; AML.T0109 AI Supply Chain Rug Pull ; AML.T0011.002 Poisoned AI Agent Tool ; AML.T0099 AI Agent Tool Data Poisoning | j.w. | 2026-09-15 | Zatruwanie/podmiana narzędzi MCP, integralność definicji | 07, 12 | `RESEARCH` |
+| AML.T0029 Denial of AI Service ; AML.T0034 Cost Harvesting (.000 Excessive Queries, .001 Resource-Intensive Queries, .002 Agentic Resource Consumption) ; AML.T0046 Spamming AI System with Chaff Data | j.w. | 2026-09-15 | DoS, wyczerpanie budżetu/zasobów, pętle agentów | 05, 13, 14, 15, 16, 18 | `RESEARCH` |
+| AML.T0048.000 Financial Harm | j.w. | 2026-09-15 | Skutek finansowy nadużycia zasobów | 14 | `RESEARCH` |
+| AML.T0080 AI Agent Context Poisoning (.000 Memory, .001 Thread) ; AML.T0093 Prompt Infiltration via Public-Facing Application | j.w. | 2026-09-15 | Zatruwanie kontekstu agenta / wstrzyknięcie przez wystawiony kanał | 17, 26 | `RESEARCH` |
+| AML.T0010 AI Supply Chain Compromise (.001 AI Software, .002 Data, .003 Model) ; AML.T0011.001 Malicious Package ; AML.T0011 User Execution | j.w. | 2026-09-15 | Łańcuch dostaw: paczki, modele, oprogramowanie AI; IOC/CVE | 05, 22, 23, 24, 25 | `RESEARCH` |
+| AML.T0011.000 Unsafe AI Artifacts ; AML.T0018 Manipulate AI Model (.000 Poison AI Model, .002 Embed Malware) ; AML.T0115 Publish Poisoned AI Artifacts (.001 Models) | j.w. | 2026-09-15 | Złośliwe artefakty (pickle/GGUF), osadzony malware, publikacja zatrutych modeli | 23, 24 | `RESEARCH` |
+| AML.T0060 Publish Hallucinated Entities | j.w. | 2026-09-15 | Slopsquatting (halucynowane paczki) | 25 | `RESEARCH` |
+
+Pokrycie: case 27 (audyt) bez bezpośredniego odpowiednika w ATLAS — oznaczone jako luka mapowania. CWE-117 (log injection) nadal cytowane tylko przez OpenSSF/CodeQL (sekcja 6, case 27), nie przez MITRE. Mapowania ATT&CK/CAPEC nie dodawano.
 
 ## 3. NIST
 
@@ -48,7 +72,15 @@ Konwencje:
 | NVD CVE-2025-54886 | https://nvd.nist.gov/vuln/detail/CVE-2025-54886 | n/d | skops — deserializacja | 23 | `CONFIRMED-VULN` |
 | NVD CVE-2023-36258 | https://nvd.nist.gov/vuln/detail/CVE-2023-36258 | n/d | LangChain — RCE (deserializacja) | 23 | `CONFIRMED-VULN` |
 
-Uwaga: z NIST pochodzą tylko SP 800-92 i strony NVD (NIST NVD). Nie ma w case'ach AI RMF, NIST AI 600-1, SP 800-53 (oryginał), SP 800-218 ani SP 800-63 — brak, nie dopisywano.
+Źródła NIST AI poniżej dodano osobno (nie pochodzą z sekcji 15 case'ów); strony pobrano i zweryfikowano 2026-10-03. Mapowanie na case'y to nasza interpretacja.
+
+| Nazwa | Link | Data | Czego dotyczy | Case'y | Typ dowodu |
+|---|---|---|---|---|---|
+| NIST AI RMF 1.0 (NIST AI 100-1) | https://www.nist.gov/itl/ai-risk-management-framework ; https://doi.org/10.6028/NIST.AI.100-1 (DOI niepobrany) | 2023-01-26 (strona NIST: obecnie w rewizji w ramach AI Action Plan) | Ramy zarządzania ryzykiem AI: funkcje Govern, Map, Measure, Manage; uzasadnienie podejścia policy-as-data i audytu | 01–27 (ogólnie); szczególnie 14, 16, 22, 27 | dok. (standard, dobrowolny) |
+| NIST AI 600-1 — Generative AI Profile (companion do AI RMF) | https://doi.org/10.6028/NIST.AI.600-1 ; https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence | 2024-07-26 | Profil ryzyk generatywnej AI i sugerowanych działań wg Govern/Map/Measure/Manage; bezpieczeństwo informacji, prywatność danych, integralność łańcucha dostaw/komponentów (nazwy kategorii ryzyka z wiedzy ogólnej, **niepotwierdzone w pobranej treści**; liczba kategorii nieodczytana ze strony NIST — wyszukiwarka podaje 12) | 01, 02, 06, 19 (prywatność/wyciek); 21, 26 (prompt injection); 22–25 (łańcuch dostaw); 13–16, 18 (nadużycie zasobów) | dok. (standard) |
+| NIST AI 100-2 E2025 — Adversarial Machine Learning: A Taxonomy and Terminology of Attacks and Mitigations | https://csrc.nist.gov/pubs/ai/100/2/e2025/final ; https://doi.org/10.6028/NIST.AI.100-2e2025 | 2025-03 | Taksonomia ataków: data poisoning, evasion, abuse, privacy breaches; terminologia i mitygacje (w tym ataki na GenAI/LLM) | 21, 26 (evasion/prompt injection); 19, 01, 02 (privacy); 23, 24, 25 (poisoning, zatrute artefakty); 20 (abuse/exfil) | `RESEARCH` / dok. (taksonomia) |
+
+Uwaga: z oryginalnych case'ów pochodzą tylko SP 800-92 i strony NVD. Nadal brak w zbiorze SP 800-53 (oryginał), SP 800-218 (SSDF) i SP 800-63 — nie dopisywano. Szczegółowe sekcje/akapity AI 600-1 i AI 100-2 (numery działań, sekcje) **nie zostały odczytane**; powołujemy się na dokument jako całość.
 
 ## 4. CISA
 
@@ -56,7 +88,14 @@ Uwaga: z NIST pochodzą tylko SP 800-92 i strony NVD (NIST NVD). Nie ma w case'a
 |---|---|---|---|---|---|
 | CISA KEV feed (Known Exploited Vulnerabilities, JSON) | https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json | n/d | Źródło danych do sygnatur IOC/CVE | 22 | `MITIGATION` |
 
-Jest to jedyne źródło CISA w całym zbiorze (brak biuletynów/advisories CISA).
+Poniższe dwa wspólne dokumenty (CISA z NSA AISC, FBI i partnerami międzynarodowymi) dodano osobno, strony CISA pobrano 2026-10-03; ich treść szczegółowa (PDF) **nie została odczytana**, a mapowanie jest nasze:
+
+| Nazwa | Link | Data | Czego dotyczy | Case'y | Typ dowodu |
+|---|---|---|---|---|---|
+| Deploying AI Systems Securely (wspólne CSI: NSA AISC, CISA, FBI, ASD ACSC, CCCS, NCSC-NZ, NCSC-UK) | https://www.cisa.gov/news-events/alerts/2024/04/15/joint-guidance-deploying-ai-systems-securely | 2024-04-15 | Bezpieczne wdrażanie zewnętrznie opracowanych systemów AI: poufność/integralność/dostępność, mitygacje znanych podatności, kontrole wykrywania i reakcji na nadużycia | 03, 04, 06, 13–18 (kontrola dostępu, limity), 22 (znane podatności), 27 (monitoring/audyt) | dok. (wytyczne rządowe) |
+| AI Data Security: Best Practices for Securing Data Used to Train & Operate AI Systems (CISA, NSA, FBI i partnerzy) | https://www.cisa.gov/resources-tools/resources/ai-data-security-best-practices-securing-data-used-train-operate-ai-systems | 2025-05-22 | Bezpieczeństwo danych w cyklu życia AI; wg doniesień prasowych: szyfrowanie, podpisy cyfrowe, śledzenie pochodzenia danych, zatrute dane, łańcuch dostaw danych, data drift (z wyszukiwania, nie z pełnej lektury) | 01, 02, 06, 19 (ochrona danych); 23, 24, 25 (provenance, integralność artefaktów); 27 (śledzenie) | dok. (wytyczne rządowe) |
+
+CISA KEV (wiersz wyżej) pozostaje jedynym źródłem CISA z oryginalnych case'ów. Nie dodano „Guidelines for Secure AI System Development" (CISA/NCSC, 2023) — strona zwróciła 404, **niezweryfikowane**.
 
 ## 5. CVE / advisories
 
@@ -302,11 +341,11 @@ Typ dowodu dla wszystkich wierszy powyżej: `CONFIRMED-VULN` (w 18 część „z
 
 ## 10. Znane luki weryfikacji
 
-Brak źródeł w kategoriach:
+Stan kategorii (zaktualizowano 2026-10-03):
 
-- **MITRE** — brak jakichkolwiek źródeł (ATT&CK/ATLAS/CWE/CAPEC) w case'ach.
-- **NIST** — tylko SP 800-92 (27), wtórne omówienie SP 800-53 AU (27) i strony NVD; brak NIST AI RMF, AI 600-1 i oryginału SP 800-53.
-- **CISA** — tylko feed KEV (22); brak biuletynów CISA.
+- **MITRE** — dodano ATLAS (ID technik odczytane z `ATLAS-2026.09.yaml`, zweryfikowane). Luki: brak ATT&CK i CAPEC; case 27 bez techniki ATLAS; strony `atlas.mitre.org/techniques/...` niepobrane (404 dla macierzy); mapowanie case -> technika to interpretacja własna; nazwy v6 różnią się od starszych opisów w case'ach (np. „ML" vs „AI").
+- **NIST** — dodano AI RMF 1.0, AI 600-1 (2024-07-26) i AI 100-2 E2025 (2025-03) z potwierdzonymi datami/tytułami; luki: nie odczytano treści AI 600-1 ani AI 100-2 (brak numerów sekcji/działań, nazwy kategorii ryzyka AI 600-1 niepotwierdzone); nadal brak oryginału SP 800-53 (jest wtórne omówienie AU), SP 800-218 i SP 800-63.
+- **CISA** — dodano „Deploying AI Systems Securely" (2024-04-15) i „AI Data Security" (2025-05-22) na podstawie stron CISA; PDF-ów nie czytano. Brak „Guidelines for Secure AI System Development" (404); KEV (22) bez daty; brak biuletynów/advisories CISA.
 
 Oznaczone w case'ach jako niezweryfikowane lub wtórne (skrótowo):
 

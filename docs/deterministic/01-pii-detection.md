@@ -1,4 +1,4 @@
-# Wykrywanie PII (dane osobowe) w promptach, tool-callach i odpowiedziach LLM
+# Wykrywanie PII (Personally Identifiable Information - dane osobowe) w promptach, tool-callach i odpowiedziach LLM
 > **ID:** PII-001..PII-018  | **Kategoria:** pii | **Priorytet:** MUST | **Złożoność:** M (rdzeń regex+walidator), L (obfuskacja, streaming, structured) | **Punkt egzekwowania:** input, output, tool-call (argumenty i wyniki narzędzi), session
 
 Legenda tagów dowodów: `[CONFIRMED-VULN]`, `[REAL-ATTACK]`, `[RESEARCH]`, `[POC]`, `[MITIGATION]`, `[VENDOR-CLAIM]`, `[THEORETICAL]`.
