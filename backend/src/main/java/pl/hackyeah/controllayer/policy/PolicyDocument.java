@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import pl.hackyeah.controllayer.budget.BudgetLimitsProperties;
+import pl.hackyeah.controllayer.ratelimit.RateLimitSettings;
 import pl.hackyeah.controllayer.guard.GuardProperties;
 import pl.hackyeah.controllayer.model.ModelCatalogProperties;
 
@@ -30,7 +31,13 @@ public record PolicyDocument(
         Map<String, RolePolicy> roles,
         List<ModelPolicy> models,
         Map<String, GuardPolicy> guards,
-        Limits limits) {
+        Limits limits,
+        RateLimitSettings rateLimit) {
+
+    public PolicyDocument(Map<String, RolePolicy> roles, List<ModelPolicy> models,
+            Map<String, GuardPolicy> guards, Limits limits) {
+        this(roles, models, guards, limits, null);
+    }
 
     public static final String ANY_MODEL = "*";
 
@@ -54,13 +61,17 @@ public record PolicyDocument(
         }
         guards = sortedGuards;
         limits = limits == null ? new Limits(null, null) : limits;
+        rateLimit = rateLimit == null ? RateLimitSettings.defaults() : rateLimit;
     }
 
     /**
      * @param models      tagi modeli albo {@value #ANY_MODEL} = wszystkie włączone modele
      * @param dailyTokens dzienny limit tokenów roli; {@code null} = bez limitu
      */
-    public record RolePolicy(List<String> models, Long dailyTokens) {
+    public record RolePolicy(List<String> models, Long dailyTokens, RateLimitSettings.RoleOverride rateLimit) {
+        public RolePolicy(List<String> models, Long dailyTokens) {
+            this(models, dailyTokens, null);
+        }
         public RolePolicy {
             models = models == null ? List.of() : models.stream().distinct().sorted().toList();
         }
@@ -98,7 +109,7 @@ public record PolicyDocument(
         var roles = new LinkedHashMap<String, RolePolicy>();
         if (policy != null) {
             policy.roles().forEach((name, role) -> roles.put(name,
-                    new RolePolicy(role.models(), role.budget() == null ? null : role.budget().dailyTokens())));
+                    new RolePolicy(role.models(), role.budget() == null ? null : role.budget().dailyTokens(), role.rateLimit())));
         }
         List<ModelPolicy> models = catalog == null ? List.of()
                 : catalog.models().stream().map(m -> new ModelPolicy(m.tag(), m.enabled())).toList();
@@ -108,7 +119,8 @@ public record PolicyDocument(
                     new GuardPolicy(guardProperties.enabled() && rule.enabled(), rule.order(), rule.params())));
         }
         return new PolicyDocument(roles, models, guards,
-                limits == null ? null : new Limits(limits.maxInputTokens(), limits.maxOutputTokens()));
+                limits == null ? null : new Limits(limits.maxInputTokens(), limits.maxOutputTokens()),
+                policy == null ? null : policy.rateLimit());
     }
 
     /**

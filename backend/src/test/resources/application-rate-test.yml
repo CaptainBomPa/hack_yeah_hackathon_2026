@@ -1,0 +1,43 @@
+spring:
+  config:
+    import: ""
+  datasource:
+    url: jdbc:h2:mem:rate-integration;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=2000
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+  flyway:
+    enabled: true
+    baseline-version: 6
+    target: 7
+control-layer:
+  seed:
+    enabled: false
+  guards:
+    enabled: false
+  models:
+    - tag: test-model
+      base-url: http://localhost:1
+      enabled: true
+  model-timeout: 10s
+policy:
+  # Small explicit limits keep boundary and concurrency scenarios deterministic.
+  rateLimit:
+    requestsPerMinute: 10
+    burstCapacity: 2
+    maxConcurrentPerUser: 1
+    maxConcurrentGlobal: 1
+  roles:
+    chat:
+      models: [test-model]
+    admin:
+      models: ["*"]
+    agent:
+      models: [test-model]
+      rateLimit:
+        requestsPerMinute: 30
+logging:
+  level:
+    root: WARN

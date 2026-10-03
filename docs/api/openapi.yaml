@@ -28,7 +28,7 @@ paths:
     post:
       summary: Czat przez gateway z kontrolami
       description: |
-        Przepływ: uwierzytelnienie → allowlista katalogu modeli → polityka roli → guardy INPUT →
+        Przepływ: uwierzytelnienie → allowlista katalogu modeli → polityka roli → limiter → budżet → guardy INPUT →
         model → guardy OUTPUT. Odmowa na dowolnym etapie zwraca `action: block` z `blockedBy`
         i nie wywołuje modelu (poza błędami guardów OUTPUT, które działają po wywołaniu).
       operationId: chatCompletions
@@ -82,6 +82,32 @@ paths:
             - `model.allowlist` — model spoza katalogu albo wyłączony;
             - `policy.model-access` — rola konta nie ma dostępu do tego modelu (policy.roles);
             - nazwa guardu (np. `PII-001`) — guard wejścia albo wyjścia zablokował treść.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardedChatResponse'
+        '429':
+          description: |
+            Limit tempa lub współbieżności: `rate.requests`, `rate.concurrent.user`,
+            `rate.concurrent.global`; albo istniejący budżet `budget.daily_cap`.
+            Limity są wspólne dla sesji i Basic tego samego UUID konta, również administratorów.
+          headers:
+            Retry-After:
+              description: Dla limitera liczba sekund do ponowienia; przy współbieżności wskazówka 1 s.
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardedChatResponse'
+        '503':
+          description: |
+            `rate.store` — magazyn limitów niedostępny (model nie jest wywoływany);
+            `rate.pipeline-timeout` — przekroczony czas pipeline'u;
+            `audit.write` — zapis audytu nie powiódł się w trybie fail-closed.
+          headers:
+            Retry-After:
+              description: Dla błędów limitera wskazówka ponowienia po 1 s.
+              schema: { type: integer, minimum: 1 }
           content:
             application/json:
               schema:
@@ -322,6 +348,6 @@ components:
             $ref: '#/components/schemas/ControlTrace'
         usage:
           nullable: true
-          description: Zużycie tokenów. Null przy `block`.
+          description: Zużycie tokenów. Null przy `block` lub niepełnym/brakującym usage providera; nieznane zużycie rozliczane do maksimum rezerwacji budżetu.
           allOf:
             - $ref: '#/components/schemas/Usage'

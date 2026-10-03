@@ -1,6 +1,7 @@
 # Gradle (root composite build — patrz settings.gradle; backend/ ma własny .gitignore)
 .gradle/
 !gradle/wrapper/gradle-wrapper.jar
+.tmp
 
 # OS
 .DS_Store

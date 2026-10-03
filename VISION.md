@@ -72,6 +72,14 @@ Spring Cloud Gateway jest reaktywny, natomiast obecna persistencja JPA/JDBC jest
 Operacje bazodanowe nie mogą wykonywać się na event loopie WebFlux: należy izolować je na
 `boundedElastic` albo w wydzielonej warstwie wykonawczej.
 
+Gateway ogranicza tempo i współbieżność żądań według centralnej polityki, aby chronić
+zasoby modelu. Limity obejmują każde konto; awarie mechanizmów ochrony nie mogą omijać kontroli.
+Rate limiter korzysta z `rateLimit` i nadpisań per rola w aktywnej wersji `policy_version`;
+autoryzacja, limiter, budżet i guardy używają jednego snapshotu polityki na żądanie.
+Zakończone błędy providera i brak połączenia zwalniają slot współbieżności; timeout lub
+przerwane połączenie po wysłaniu żądania zachowują dzierżawę do wygaśnięcia. Brak połączenia
+przed wysłaniem żądania zwalnia również rezerwację budżetu bez naliczania tokenów.
+
 ## 3. Technologie
 
 | Warstwa | Decyzja |

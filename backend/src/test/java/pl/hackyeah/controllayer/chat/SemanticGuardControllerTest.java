@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -14,11 +16,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
@@ -30,7 +34,6 @@ import pl.hackyeah.controllayer.audit.AuditLog;
 import pl.hackyeah.controllayer.audit.AuditProperties;
 import pl.hackyeah.controllayer.budget.BudgetGate;
 import pl.hackyeah.controllayer.budget.BudgetLimitsProperties;
-import pl.hackyeah.controllayer.budget.BudgetService;
 import pl.hackyeah.controllayer.chat.upstream.OllamaChatClient;
 import pl.hackyeah.controllayer.guard.GuardChain;
 import pl.hackyeah.controllayer.guard.GuardProperties;
@@ -43,6 +46,7 @@ import pl.hackyeah.controllayer.policy.ModelAccessPolicy;
 import pl.hackyeah.controllayer.policy.PolicyDocument;
 import pl.hackyeah.controllayer.policy.PolicySource;
 import pl.hackyeah.controllayer.policy.PolicyProperties;
+import reactor.core.publisher.Mono;
 
 /**
  * Dowód integracji gateway <-> sidecar: żądanie uznane przez sidecar za atak jest blokowane PRZED modelem
@@ -117,12 +121,20 @@ class SemanticGuardControllerTest {
                         Map.of("blockThreshold", 0.998, "timeoutMs", 1500, "failureMode", failureMode))));
         var chain = new GuardChain(List.of(semantic), guardProperties);
         AuditLog auditLog = audited::add;
-        var budgetGate = new BudgetGate(
-                policyProperties, new BudgetLimitsProperties(null, null), new BudgetService(null));
-        var controller = new ChatCompletionController(catalog, policy, budgetGate,
+        var executionGate = mock(ChatExecutionGate.class);
+        var execution = mock(ChatExecutionGate.Execution.class);
+        when(execution.budget()).thenReturn(new BudgetGate.BudgetCheck(true, null, null, 1024, 0, false, 0));
+        when(execution.reconcile(anyLong())).thenReturn(Mono.just(0L));
+        when(executionGate.execute(any(), anyString(), anyString(), anyString(), anyLong(), anyList(), anyList(), any()))
+                .thenAnswer(invocation -> {
+                    Function<ChatExecutionGate.Execution, Mono<ResponseEntity<GuardedChatResponse>>> operation =
+                            invocation.getArgument(7);
+                    return operation.apply(execution);
+                });
+        var controller = new ChatCompletionController(catalog, policy,
                 new OllamaChatClient(WebClient.builder()), chain, auditLog, new AuditProperties(null, true, null),
-                PolicySource.fixed(PolicyDocument.fromConfig(policyProperties, catalogProperties, guardProperties,
-                        new BudgetLimitsProperties(null, null))));
+                executionGate, PolicySource.fixed(PolicyDocument.fromConfig(
+                        policyProperties, catalogProperties, guardProperties, new BudgetLimitsProperties(null, null))));
         var authentication = new UsernamePasswordAuthenticationToken("tester", "n/a",
                 List.of(new SimpleGrantedAuthority("ROLE_CHAT")));
         WebFilter authenticated = (exchange, next) -> next.filter(exchange)

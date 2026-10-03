@@ -216,7 +216,7 @@ public class BddWorld {
             var existing = roles.get(role);
             var models = existing.models().stream().filter(m -> !m.equals(modelTag)).toList();
             roles.put(role, new PolicyDocument.RolePolicy(models, existing.dailyTokens()));
-            return new PolicyDocument(roles, doc.models(), doc.guards(), doc.limits());
+            return new PolicyDocument(roles, doc.models(), doc.guards(), doc.limits(), doc.rateLimit());
         });
     }
 
@@ -228,7 +228,7 @@ public class BddWorld {
             var models = new ArrayList<>(existing.models());
             models.add(modelTag);
             roles.put(role, new PolicyDocument.RolePolicy(models, existing.dailyTokens()));
-            return new PolicyDocument(roles, doc.models(), doc.guards(), doc.limits());
+            return new PolicyDocument(roles, doc.models(), doc.guards(), doc.limits(), doc.rateLimit());
         });
     }
 
@@ -238,7 +238,7 @@ public class BddWorld {
             var models = doc.models().stream()
                     .map(m -> m.tag().equals(modelTag) ? new PolicyDocument.ModelPolicy(modelTag, enabled) : m)
                     .toList();
-            return new PolicyDocument(doc.roles(), models, doc.guards(), doc.limits());
+            return new PolicyDocument(doc.roles(), models, doc.guards(), doc.limits(), doc.rateLimit());
         });
     }
 
@@ -248,7 +248,7 @@ public class BddWorld {
             var guards = new LinkedHashMap<>(doc.guards());
             var existing = guards.get(guardId);
             guards.put(guardId, new PolicyDocument.GuardPolicy(enabled, existing.order(), existing.params()));
-            return new PolicyDocument(doc.roles(), doc.models(), guards, doc.limits());
+            return new PolicyDocument(doc.roles(), doc.models(), guards, doc.limits(), doc.rateLimit());
         });
     }
 
@@ -260,7 +260,7 @@ public class BddWorld {
             var params = new LinkedHashMap<>(existing.params());
             params.put(paramName, value);
             guards.put(guardId, new PolicyDocument.GuardPolicy(existing.enabled(), existing.order(), params));
-            return new PolicyDocument(doc.roles(), doc.models(), guards, doc.limits());
+            return new PolicyDocument(doc.roles(), doc.models(), guards, doc.limits(), doc.rateLimit());
         });
     }
 
@@ -270,21 +270,21 @@ public class BddWorld {
             var roles = new LinkedHashMap<>(doc.roles());
             var existing = roles.getOrDefault(role, new PolicyDocument.RolePolicy(List.of(), null));
             roles.put(role, new PolicyDocument.RolePolicy(existing.models(), dailyTokens));
-            return new PolicyDocument(roles, doc.models(), doc.guards(), doc.limits());
+            return new PolicyDocument(roles, doc.models(), doc.guards(), doc.limits(), doc.rateLimit());
         });
     }
 
     public void setMaxInputTokensLive(int max) {
         ensureController();
         editPolicy(doc -> new PolicyDocument(doc.roles(), doc.models(), doc.guards(),
-                new PolicyDocument.Limits(max, doc.limits().maxOutputTokens())));
+                new PolicyDocument.Limits(max, doc.limits().maxOutputTokens()), doc.rateLimit()));
     }
 
     public void attemptInvalidPolicyEdit() {
         ensureController();
         lastEditWasRejected = false;
         try {
-            editPolicy(doc -> new PolicyDocument(Map.of(), doc.models(), doc.guards(), doc.limits()));
+            editPolicy(doc -> new PolicyDocument(Map.of(), doc.models(), doc.guards(), doc.limits(), doc.rateLimit()));
         } catch (PolicyStore.ValidationException e) {
             lastEditWasRejected = true;
         }
@@ -308,7 +308,8 @@ public class BddWorld {
             defaultModelTag = defaultModelTag == null ? "default-model" : defaultModelTag;
         }
 
-        var policyProperties = new PolicyProperties(rolePolicies);
+        var policyProperties = new PolicyProperties(rolePolicies, new pl.hackyeah.controllayer.ratelimit.RateLimitSettings(
+                "off", null, null, null, null, null));
         var catalogProperties = new ModelCatalogProperties(modelEntries, Duration.ofSeconds(5));
         var guardProperties = new GuardProperties(true, guardRules);
         var budgetLimits = new BudgetLimitsProperties(maxInputTokens, maxOutputTokens);
@@ -333,9 +334,14 @@ public class BddWorld {
                 budgetLimits);
 
         AuditLog auditLog = audited::add;
-        controller = new ChatCompletionController(catalog, policy, budgetGate,
+        var executionGate = new pl.hackyeah.controllayer.chat.ChatExecutionGate(
+                new pl.hackyeah.controllayer.ratelimit.RateLimitGate(
+                        new PolicyProperties(rolePolicies, new pl.hackyeah.controllayer.ratelimit.RateLimitSettings(
+                                "off", null, null, null, null, null)), null,
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()), budgetGate);
+        controller = new ChatCompletionController(catalog, policy,
                 new OllamaChatClient(WebClient.builder()), guardChain, auditLog,
-                new AuditProperties(null, true, null), policyStore);
+                new AuditProperties(null, true, null), executionGate, policyStore);
     }
 
     private WebTestClient webTestClientFor(boolean authenticated) {

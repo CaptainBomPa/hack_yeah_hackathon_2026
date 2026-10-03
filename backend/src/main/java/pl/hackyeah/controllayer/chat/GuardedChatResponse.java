@@ -19,6 +19,10 @@ public record GuardedChatResponse(
         Long policyVersion, // wersja polityki, która podjęła decyzję (docs/policy-management-plan.md)
         String policyHash) {
 
+    public GuardedChatResponse {
+        trace = List.copyOf(trace);
+    }
+
     public static GuardedChatResponse allow(
             String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace, BudgetUsage budget) {
         return new GuardedChatResponse(requestId, "allow", message, null, trace, usage, budget, null, null);

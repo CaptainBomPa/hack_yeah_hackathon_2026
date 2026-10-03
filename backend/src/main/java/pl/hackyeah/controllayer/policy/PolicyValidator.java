@@ -59,6 +59,11 @@ public final class PolicyValidator {
         });
         doc.roles().forEach((name, role) -> {
             String path = "roles." + name;
+            try {
+                doc.rateLimit().forRole(role.rateLimit());
+            } catch (IllegalArgumentException error) {
+                errors.add(new Error(path + ".rateLimit", error.getMessage()));
+            }
             if (!ROLE_NAME.matcher(name).matches()) {
                 errors.add(new Error(path, "role name must be lowercase letters, digits, '-' or '_' (max 50)"));
             }

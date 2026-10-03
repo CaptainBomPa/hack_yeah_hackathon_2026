@@ -3,6 +3,8 @@ package pl.hackyeah.controllayer.chat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -13,9 +15,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
@@ -27,7 +31,6 @@ import pl.hackyeah.controllayer.audit.AuditLog;
 import pl.hackyeah.controllayer.audit.AuditProperties;
 import pl.hackyeah.controllayer.budget.BudgetGate;
 import pl.hackyeah.controllayer.budget.BudgetLimitsProperties;
-import pl.hackyeah.controllayer.budget.BudgetService;
 import pl.hackyeah.controllayer.chat.upstream.OllamaChatClient;
 import pl.hackyeah.controllayer.guard.GuardChain;
 import pl.hackyeah.controllayer.guard.GuardProperties;
@@ -38,6 +41,7 @@ import pl.hackyeah.controllayer.policy.ModelAccessPolicy;
 import pl.hackyeah.controllayer.policy.PolicyDocument;
 import pl.hackyeah.controllayer.policy.PolicySource;
 import pl.hackyeah.controllayer.policy.PolicyProperties;
+import reactor.core.publisher.Mono;
 
 /**
  * Testuje pełną ścieżkę /v1/chat/completions (allowlista katalogu + polityka roli + guardy +
@@ -53,15 +57,22 @@ class ChatCompletionControllerTest {
     private ModelCatalogProperties catalogProperties;
     private ModelAccessPolicy policy;
     private PolicyProperties policyProperties;
+    private volatile String upstreamBody = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"czesc\"}}],"
+            + "\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}";
+    private ChatExecutionGate.Execution execution;
+    private boolean failingPipeline;
 
     @BeforeEach
     void setUp() throws IOException {
         stubUpstream = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         stubUpstream.createContext("/v1/chat/completions", exchange -> {
             upstreamBodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            String body = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"czesc\"}}],"
-                    + "\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}";
-            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            if (upstreamBody == null) {
+                exchange.sendResponseHeaders(204, -1);
+                exchange.close();
+                return;
+            }
+            byte[] bytes = upstreamBody.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, bytes.length);
             try (var os = exchange.getResponseBody()) {
@@ -265,6 +276,47 @@ class ChatCompletionControllerTest {
     private final List<AuditEntry> audited = new ArrayList<>();
     private boolean failingAudit;
 
+    @Test
+    void missingUsageChargesTheReservationAndDoesNotInventZeroUsage() {
+        for (String usage : List.of("null", "{}", "{\"prompt_tokens\":3}", "{\"completion_tokens\":2}")) {
+            upstreamBody = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"czesc\"}}],\"usage\":" + usage + "}";
+            clientAs("chat").post().uri("/v1/chat/completions")
+                    .bodyValue(new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "hej"))))
+                    .exchange().expectStatus().isOk().expectBody().jsonPath("$.usage").doesNotExist();
+            verify(execution).upstreamFinished(1027L);
+            verify(execution).reconcile(1027L);
+            org.junit.jupiter.api.Assertions.assertNull(audited.getLast().promptTokens());
+        }
+    }
+
+    @Test
+    void malformedProviderResponsesAreBlockedAndAudited() {
+        for (String body : java.util.Arrays.asList(null, "{}", "{\"choices\":[]}",
+                "{\"choices\":[null]}", "{\"choices\":[{\"message\":null}]}",
+                "{\"choices\":[{\"message\":{\"role\":\"assistant\"}}]}",
+                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"czesc\"}}],"
+                        + "\"usage\":{\"prompt_tokens\":-1,\"completion_tokens\":2}}")) {
+            upstreamBody = body;
+            clientAs("chat").post().uri("/v1/chat/completions")
+                    .bodyValue(new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "hej"))))
+                    .exchange().expectStatus().isEqualTo(502).expectBody()
+                    .jsonPath("$.blockedBy").isEqualTo("upstream-error");
+            verify(execution).reconcile(1027L);
+            assertEquals(502, audited.getLast().httpStatus());
+        }
+        assertEquals(7, audited.size());
+    }
+
+    @Test
+    void pipelineFailureIsFailClosedAndAudited() {
+        failingPipeline = true;
+        clientAs("chat").post().uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "hej"))))
+                .exchange().expectStatus().isEqualTo(503).expectBody()
+                .jsonPath("$.blockedBy").isEqualTo("pipeline.availability");
+        assertEquals(503, audited.getFirst().httpStatus());
+    }
+
     private ChatCompletionController controller() {
         var upstreamClient = new OllamaChatClient(WebClient.builder());
         AuditLog auditLog = entry -> {
@@ -273,15 +325,23 @@ class ChatCompletionControllerTest {
             }
             audited.add(entry);
         };
-        // Żadna rola w tym teście nie ma skonfigurowanego budżetu (RolePolicy.budget() == null),
-        // więc BudgetGate nigdy nie dotyka JdbcTemplate — bezpiecznie można przekazać null.
-        var budgetGate = new BudgetGate(
-                policyProperties, new BudgetLimitsProperties(null, null), new BudgetService(null));
-        // Kontroler bierze jeden snapshot polityki na żądanie — musi obejmować to samo co komponenty powyżej.
         var policySource = PolicySource.fixed(PolicyDocument.fromConfig(
                 policyProperties, catalogProperties, guardProperties, new BudgetLimitsProperties(null, null)));
-        return new ChatCompletionController(catalog, policy, budgetGate, upstreamClient, guardChain, auditLog,
-                new AuditProperties(null, true, null), policySource);
+        // Admission is covered by the full-context rate-limit integration tests.
+        var executionGate = mock(ChatExecutionGate.class);
+        execution = mock(ChatExecutionGate.Execution.class);
+        when(execution.budget()).thenReturn(new BudgetGate.BudgetCheck(true, null, null, 1024, 1027, false, 0));
+        when(execution.reconcile(anyLong())).thenReturn(Mono.just(0L));
+        when(executionGate.execute(any(), anyString(), anyString(), anyString(), anyLong(), anyList(), anyList(), any()))
+                .thenAnswer(invocation -> {
+                    if (failingPipeline) return Mono.error(new IllegalStateException("store unavailable"));
+                    Function<ChatExecutionGate.Execution, Mono<ResponseEntity<GuardedChatResponse>>> operation =
+                            invocation.getArgument(7);
+                    return operation.apply(execution);
+                });
+        return new ChatCompletionController(catalog, policy, upstreamClient, guardChain, auditLog,
+                new AuditProperties(null, true, null),
+                executionGate, policySource);
     }
 
     private static WebFilter authenticatedAs(String role) {

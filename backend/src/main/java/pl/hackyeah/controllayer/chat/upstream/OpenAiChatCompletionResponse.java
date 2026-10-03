@@ -17,6 +17,6 @@ public record OpenAiChatCompletionResponse(List<Choice> choices, UpstreamUsage u
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record UpstreamUsage(
-            @JsonProperty("prompt_tokens") int promptTokens,
-            @JsonProperty("completion_tokens") int completionTokens) {}
+            @JsonProperty("prompt_tokens") Integer promptTokens,
+            @JsonProperty("completion_tokens") Integer completionTokens) {}
 }

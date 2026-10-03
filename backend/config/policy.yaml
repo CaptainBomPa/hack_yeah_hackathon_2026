@@ -6,6 +6,14 @@
 # BUDGET-003); brak sekcji `budget` = bez limitu (np. admin). Wyczerpanie = 429, blockedBy budget.daily_cap.
 # Wczytywane przy starcie; hot reload pojawi się w kolejnym kroku.
 policy:
+  # Defaults also apply when this section or a role override is missing. Explicit off required to disable.
+  rateLimit:
+    mode: block
+    requestsPerMinute: 30
+    burstCapacity: 5
+    maxConcurrentPerUser: 2
+    maxConcurrentGlobal: 8
+    pipelineTimeout: 120s
   roles:
     admin:
       models: ["*"]
@@ -17,3 +25,8 @@ policy:
       models: ["qwen2.5:1.5b-instruct-q4_K_M", "qwen2.5:0.5b"]
       budget:
         dailyTokens: 20000
+      # rateLimit:
+      #   mode: block
+      #   requestsPerMinute: 10
+      #   burstCapacity: 2
+      #   maxConcurrentPerUser: 1
