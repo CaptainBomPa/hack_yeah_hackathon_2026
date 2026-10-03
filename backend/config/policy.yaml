@@ -1,5 +1,5 @@
 # Polityka uprawnień gatewaya (CRITERIA §4.1: jedna konfiguracja; docs/auth/).
-# Klucz pod `roles` to rola konta z `app_user.role` (chat | admin | agent).
+# Klucz pod `roles` to rola konta z `app_user.role` (chat | admin | agent | codex).
 # `models` to tagi z katalogu `control-layer.models` w application.yml; `"*"` = wszystkie.
 # Rola bez wpisu albo model spoza listy = odmowa (403, blockedBy policy.model-access).
 # `budget.dailyTokens` to dzienny limit tokenów tej roli (docs/deterministic/14-token-budget-quotas.md,
@@ -21,6 +21,12 @@ policy:
       models: ["qwen2.5:1.5b-instruct-q4_K_M"]
       budget:
         dailyTokens: 100000
+    # codex: konta Codex CLI (abonament ChatGPT), modele z codex-models.yml. Historia kodowania i definicje
+    # narzędzi są duże, stąd wyższy budżet niż dla czatu.
+    codex:
+      models: ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"]
+      budget:
+        dailyTokens: 1000000
     chat:
       models: ["qwen2.5:1.5b-instruct-q4_K_M", "qwen2.5:0.5b"]
       budget:

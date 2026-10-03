@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
@@ -35,6 +36,7 @@ import pl.hackyeah.controllayer.guard.Stage;
 import pl.hackyeah.controllayer.model.ModelCatalog;
 import pl.hackyeah.controllayer.model.ModelCatalogProperties;
 import pl.hackyeah.controllayer.policy.ActivePolicy;
+import pl.hackyeah.controllayer.integration.IntegrationProperties;
 import pl.hackyeah.controllayer.policy.PolicySource;
 import pl.hackyeah.controllayer.policy.ModelAccessPolicy;
 import reactor.core.publisher.Mono;
@@ -49,6 +51,7 @@ import reactor.core.scheduler.Schedulers;
  * URI/body na poziomie filtrów Gateway.
  */
 @RestController
+@ConditionalOnProperty(name = IntegrationProperties.WEB_ENABLED, havingValue = "true", matchIfMissing = true)
 public class ChatCompletionController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatCompletionController.class);

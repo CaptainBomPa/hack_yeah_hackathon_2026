@@ -14,8 +14,8 @@ limits:
   max_input_chars: 20000
 
 deadlines:
-  request_deadline_ms: 5000      # luźniej niż domyślnie: pierwsze wywołanie modelu bywa wolne
-  detector_timeout_ms: 3000
+  request_deadline_ms: 20000     # długie instrukcje i historia klientów agentowych na CPU
+  detector_timeout_ms: 15000
   normalization_timeout_ms: 500
   max_workers: 8
 

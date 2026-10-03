@@ -17,6 +17,7 @@ Demo accounts (`backend/config/users.yaml`):
 | `chat1`, `chat2`, `chat3` | same as login | chat | `/playground` on `qwen2.5:1.5b-instruct-q4_K_M` and `qwen2.5:0.5b`, 20,000 tokens/day limit |
 | `agent-runner` | `agent-runner-123` | agent | machine account (HTTP Basic), no frontend access |
 | `agent-sdk` | `agent-sdk-123` | agent | same as above |
+| `codex-agent` | `codex-agent-123` | codex | Codex CLI account, used by default by `node cli/control-layer.mjs run codex`: the GPT models from `codex-models.yml`, 1,000,000 tokens/day |
 
 What the views are for:
 
@@ -61,3 +62,21 @@ docker compose up -d --build
 
 First start downloads images and models (Ollama ~1.4GB, sidecar ~600MB) — takes a few minutes.
 Then: frontend on `localhost:3000`, backend on `localhost:8000`.
+
+Rebuild the whole stack: `docker compose up -d --build`.
+After backend changes: `docker compose up -d --build backend`.
+Details: [backend/README.md](backend/README.md#przebudowa-po-zmianach-z-katalogu-głównego-repo).
+
+## Codex CLI integration
+
+The same gateway also fronts **Codex CLI** (ChatGPT subscription login, no OpenAI API key):
+Codex traffic (`/v1/responses`) goes through the same guards, budgets and audit log as the web
+playground (`/v1/chat/completions`) — both integrations run side by side.
+
+```bash
+codex login                            # once, ChatGPT login
+node cli/control-layer.mjs run codex   # Codex through the local gateway, demo account codex-agent
+```
+
+- Launcher for Windows/macOS/Linux: [cli/README.md](cli/README.md)
+- Backend setup (model, policy, endpoints): [backend/README.md](backend/README.md#web-playground-i-codex-cli-równolegle)

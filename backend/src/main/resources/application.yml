@@ -16,6 +16,8 @@ spring:
       - optional:file:${CONTROL_LAYER_POLICY_FILE:config/policy.yaml}
       # Konta startowe (demo). Używane tylko, gdy control-layer.seed.enabled=true.
       - optional:file:config/users.yaml
+      # Modele Codex CLI (slugi z katalogu ChatGPT), dokładane do control-layer.models.
+      - classpath:codex-models.yml
   jpa:
     open-in-view: false
 
@@ -25,6 +27,14 @@ spring:
 # jest odrzucany identycznie jak nieznany. Docelowo może przenieść się do policy.yaml razem
 # z resztą polityk (VISION.md §9, krok 1) — dziś żyje tu, żeby nie czekać na ten format.
 control-layer:
+  # Integracje działają równolegle: web playground (/v1/chat/completions -> Ollama) i Codex CLI
+  # (/v1/responses -> abonament ChatGPT). Każdą można wyłączyć niezależnie od profilu bazy.
+  integration:
+    web-enabled: ${WEB_INTEGRATION_ENABLED:true}
+    codex-enabled: ${CODEX_INTEGRATION_ENABLED:true}
+    codex-base-url: ${CODEX_UPSTREAM_BASE_URL:https://chatgpt.com/backend-api/codex}
+    timeout: 180s
+    max-response-bytes: 8388608
   model-timeout: 60s
   models:
     - tag: qwen2.5:1.5b-instruct-q4_K_M

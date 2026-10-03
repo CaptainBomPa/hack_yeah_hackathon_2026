@@ -181,6 +181,66 @@ hashy i bezpiecznych fragmentów. Eksport CSV/JSON musi zachowywać te same zasa
 
 ## 7. API i routing
 
+### Integracje: web i Codex równolegle
+
+Integracje `web` i `codex` działają jednocześnie w jednym procesie, niezależnie od profilu
+bazy `local`/`prod`. Każdą można wyłączyć flagą (`control-layer.integration.web-enabled` /
+`codex-enabled`, env `WEB_INTEGRATION_ENABLED` / `CODEX_INTEGRATION_ENABLED`, domyślnie obie
+`true`). Web: playground woła `/v1/chat/completions`, a backend model w Ollamie. Codex proxy’uje natywny ruch
+abonamentowego Codex CLI do `https://chatgpt.com/backend-api/codex`: `POST /v1/responses`,
+`POST /v1/responses/compact` i `GET /v1/models`. Nie używa klucza OpenAI API ani płatnego
+API jako fallbacku. Konfiguracja upstreamu dopuszcza wyłącznie ten backend ChatGPT lub loopback
+na potrzeby testów. Klient zachowuje OAuth i identyfikator konta; gateway przekazuje je wyłącznie
+w obrębie bieżącego żądania. Nie utrwala ich w konfiguracji, bazie ani logach. Odświeżaniem OAuth
+zarządza sam Codex. Statusy upstreamu, w tym 401 i 429, wracają z bezpiecznym komunikatem,
+bez kopiowania treści błędów. Katalog modeli zachowuje natywne metadane, filtrując modele
+według aktywnej polityki i uprawnień roli.
+
+Codex CLI jest klientem podpiętym przez custom provider, nie pluginem MCP. Wieloplatformowy
+launcher Node (`cli/control-layer.mjs`, Node >=20) ustawia provider argumentami procesu,
+`requires_openai_auth=true` i `forced_login_method=chatgpt`; przed uruchomieniem sprawdza
+`codex login status`. Korzysta z istniejącego magazynu logowania Codexa (plik/keyring),
+bez odczytywania lub kopiowania `auth.json` przez launcher. Poświadczenie konta gatewaya
+przekazuje tylko procesowi potomnemu jako osobny nagłówek `X-Control-Layer-Authorization`.
+`Authorization` pozostaje nagłówkiem OAuth. Backend używa osobnego, bezstanowego łańcucha
+Spring Security dla trzech endpointów Codexa; OAuth nie uwierzytelnia konta gatewaya.
+
+Profil instalowany jest w katalogu konfiguracji Control Layer, bez zmian w configu Codexa,
+PATH ani konfiguracji powłoki. `disable` uruchamia oryginalnego Codexa; `uninstall` usuwa
+tylko nasz profil. Oryginalna konfiguracja, także zmieniona po instalacji, pozostaje nienaruszona.
+Sekret gatewaya pochodzi z credential helpera albo process-local env; nie zapisujemy go
+w profilu. Windows/macOS/Linux korzystają z tego samego launchera. Obie integracje wykorzystują
+te same polityki, guardy, budżety i audyt. Modele Codexa (slugi z katalogu ChatGPT, plik
+`codex-models.yml`) są w katalogu obok modeli Ollamy; które z nich wolno używać, decyduje polityka.
+Zmiana flag wymaga restartu. Listę aktywnych
+integracji zwraca chronione adminem `GET /api/integration`.
+
+Adapter Codex buforuje SSE do zakończenia generacji i kontroli OUTPUT oraz audytu.
+Blokady treści INPUT/OUTPUT zwracają 400, brak uprawnień do modelu 403, brak uwierzytelnienia
+401, limity budżetu 429 (rozmiar wejścia 413), a niedostępna kontrola fail-closed 503.
+HTTP 400 zatrzymuje automatyczne ponawianie tury w Codex CLI 0.159.3; HTTP 422 jest ponawiane.
+Błąd zawiera request ID, wersję polityki, etap, identyfikator guarda, bezpieczny kod powodu
+i klasy wykrytych danych (np. `PII-001/PL_PESEL`), bez surowej treści ani pełnego trace.
+Dozwolony stream wraca w natywnym formacie, wraz z dozwolonymi nagłówkami routingu i limitów.
+Redakcja OUTPUT w SSE powoduje blokadę całej odpowiedzi, aby nie ujawnić danych rozbitych
+między deltami. Odpowiedzi JSON mogą być redagowane. Adapter obsługuje tekst,
+function/custom tool calls (także w namespace), definicje narzędzi w `input.additional_tools`
+(Codex CLI 0.159.3) oraz w głównym `tools`, reasoning oraz kompaktowanie. Obie lokalizacje
+definicji podlegają tej samej walidacji i kontroli INPUT. Odrzuca multimodalne wejście,
+ukrytą historię przez `previous_response_id`/`conversation` i tryb background. WebSocket
+jest wyłączony w providerze launchera. Hosted web search jest wyłączony w tej integracji;
+pełna kontrola lokalnego wykonania narzędzi i aplikacja desktopowa pozostają rozszerzeniami.
+
+Backend abonamentowy nie przyjmuje API-owego `max_output_tokens`: nie dokładamy tego pola
+ani innych API-owych parametrów do natywnego żądania. Budżet robi kontrolę wejścia i rezerwację
+przed generacją, rozlicza natywne usage po generacji, a odpowiedź przekraczającą limit wyjścia
+blokuje. Nie jest to gwarancja zatrzymania generacji po dokładnej liczbie tokenów.
+Nieznane zużycie po awarii upstreamu zachowuje konserwatywną rezerwację; odrzucenia 4xx
+przed generacją zwalniają rezerwację. Liczymy tokeny, nie cenę per token ruchu abonamentowego.
+Integrację weryfikują testy backendu z atrapą ChatGPT oraz rzeczywisty Codex CLI 0.155.0
+z fikcyjnym logowaniem i lokalną atrapą. Test na prawdziwym koncie wymaga istniejącego
+logowania ChatGPT, konta gatewaya oraz dopuszczenia modelu w aktywnej polityce.
+
 Wejściem dla playgroundu jest zgodny z OpenAI endpoint `POST /v1/chat/completions`, wzbogacony
 o identyfikator żądania i trace kontroli. API dashboardu korzysta z `/api/**`. Kontrakt
 zaimplementowanych endpointów (OpenAPI 3.0): [`docs/api/openapi.yaml`](docs/api/openapi.yaml).

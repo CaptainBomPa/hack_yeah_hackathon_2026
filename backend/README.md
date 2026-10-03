@@ -18,6 +18,75 @@ Stack: Java 25, Spring Boot 4.1, Spring Cloud 2025.1 (gateway webflux), Gradle 9
 
 ## Uruchomienie
 
+### Web playground i Codex CLI równolegle
+
+Błędy `/v1/responses` i `/v1/responses/compact`: blokada treści wejścia/wyjścia to **400**,
+brak uprawnień do modelu **403**, brak uwierzytelnienia **401**, wyczerpany budżet lub limit
+wyjścia **429**, za duże wejście **413**, a niedostępna kontrola fail-closed **503**.
+`error` zawiera `message`, `code`, `request_id`, `policy_version`, `retryable`; blokada guarda
+dodatkowo `stage`, `guard`, `reason`, `detections` (np. `PII-001/PL_PESEL`).
+Zwracamy klasy wykryć, nigdy wykryte wartości, fragmenty promptu ani surowe błędy providera.
+
+Obie integracje działają jednocześnie, w każdym profilu bazy (`local`/`prod`): playground woła
+`/v1/chat/completions` (Ollama), Codex CLI `/v1/responses` (abonament ChatGPT). Każdą można wyłączyć
+(`WEB_INTEGRATION_ENABLED=false` / `CODEX_INTEGRATION_ENABLED=false`, restart). Aktywne integracje
+sprawdzisz jako admin przez `GET /api/integration`.
+
+Codex używa istniejącego **logowania ChatGPT i abonamentu**. Backend nie potrzebuje
+`OPENAI_API_KEY`, a adapter nigdy nie przechodzi na API z osobnym billingiem.
+Modele Codexa są w katalogu na stałe: lista slugów z ChatGPT w
+[`src/main/resources/codex-models.yml`](src/main/resources/codex-models.yml). Nowy model w Codexie
+(`/model`) = dopisz tam jego slug i przebuduj backend (`docker compose up -d --build backend`).
+
+W Policies włącz wybrane modele z base URL `https://chatgpt.com/backend-api/codex` w aktywnym
+katalogu i modeli dostępnych dla roli konta agenta. Istniejąca polityka w bazie nie jest
+nadpisywana konfiguracją profilu. Ustaw limity wejścia i wyjścia odpowiednie dla historii
+kodowania i definicji narzędzi; dotychczasowe małe limity dla playgroundu mogą blokować Codexa.
+Potrzebujesz Node >=20 i Codex CLI na PATH. W terminalu klienta, z katalogu głównego repo:
+
+```sh
+codex login                  # jeśli nie jesteś już zalogowany przez ChatGPT
+node cli/control-layer.mjs run codex
+```
+
+Launcher domyślnie używa konta demo `codex-agent` / `codex-agent-123` (rola `codex`,
+`config/users.yaml`) i gatewaya `http://localhost:8000/v1`. Inne konto lub zdalny gateway:
+`install codex --user LOGIN --gateway https://HOST/v1` (szczegóły w [cli/README.md](../cli/README.md)).
+
+Routing jest ustawiany tylko dla tego procesu przez argumenty Codexa. Launcher zachowuje
+oryginalny `CODEX_HOME`, konfigurację i magazyn logowania; sam Codex odświeża OAuth tak jak zwykle.
+Gateway otrzymuje OAuth w `Authorization` i własne logowanie w oddzielnym nagłówku
+`X-Control-Layer-Authorization`. Tylko nagłówki wymagane przez protokół trafiają do upstreamu;
+logowanie gatewaya, cookies i pozostałe nagłówki nie są przekazywane do ChatGPT.
+OAuth i hasła nie są zapisywane w profilu ani audycie. Dla zdalnego gatewaya użyj
+`--gateway https://HOST/v1` podczas install. Credential helper i wszystkie systemy:
+[cli/README.md](../cli/README.md).
+
+```sh
+node cli/control-layer.mjs disable codex
+node cli/control-layer.mjs enable codex
+node cli/control-layer.mjs uninstall codex
+```
+
+Zwykłe `codex` zawsze korzysta z oryginalnej konfiguracji. Disable i uninstall nie przywracają
+starych plików użytkownika, bo launcher ich nie modyfikuje. Wcześniej utworzony profil launchera
+zachowuje gateway/model/konto i po aktualizacji kodu także używa logowania ChatGPT.
+
+Natywne endpointy: `POST /v1/responses`, `POST /v1/responses/compact`, `GET /v1/models`.
+Katalog modeli jest filtrowany według polityki. Statusy 401 i 429 zachowują znaczenie logowania
+oraz limitu abonamentu. SSE jest buforowane do końca i kontroli wyjścia; redakcja SSE blokuje
+cały stream. JSON może być redagowany. Nie obsługujemy jeszcze WebSocket, obrazów/plików,
+background, ukrytej historii, hosted web search ani aplikacji desktopowej. Grupy narzędzi namespace
+Codexa są zachowywane i ich opisy oraz schematy przechodzą te same kontrole wejścia.
+Backend ChatGPT nie przyjmuje `max_output_tokens`: limit wyjścia sprawdzamy po generacji,
+nie dokładamy tego parametru. Budżet pozostaje tokenowy; nie wyliczamy ceny za token abonamentu.
+Playground i Codex dzielą polityki, budżety, dashboard i audyt.
+Kontrola lokalnego wykonania narzędzi wymaga osobnej integracji; tutaj kontrolujemy ruch modelowy.
+
+Testy obejmują pełny łańcuch security, OAuth, nagłówki, modele, compaction i guardy z atrapą
+upstreamu. Osobny test uruchamia rzeczywisty Codex CLI 0.155.0 z fikcyjnymi poświadczeniami
+na loopbackie. Test rzeczywistego konta ChatGPT pozostaje osobnym sprawdzeniem.
+
 Otwórz **root repo** (nie ten katalog) w IntelliJ — `settings.gradle` w roocie jest composite
 buildem, który dociąga `backend/` automatycznie (szczegóły: [`../README.md`](../README.md)).
 
@@ -38,20 +107,19 @@ docker compose up -d --build db backend             # całość w kontenerach (p
 
 Gateway słucha na `http://localhost:8000`, health: `/actuator/health`.
 
-## Przebudowa po zmianach (PowerShell, z katalogu głównego repo)
+## Przebudowa po zmianach (z katalogu głównego repo)
 
-Docker Desktop musi być uruchomiony. Gotowy skrypt buduje obrazy, uruchamia kontenery
-i czeka na gotowość usług; przerywa przy błędzie builda. Zachowuje bazę i pobrane modele.
+Docker Desktop musi być uruchomiony. Baza i pobrane modele zostają w wolumenach.
 
-```powershell
+```sh
 # Po zmianach w backendzie (Java, resources, konfiguracja builda):
-.\scripts\rebuild.ps1 -Target backend
+docker compose up -d --build backend
 
-# Po zmianach w UI:
-.\scripts\rebuild.ps1 -Target frontend
+# Po zmianach w UI (bez restartu backendu, sesje zostają):
+docker compose up -d --build --no-deps frontend
 
 # Cały stack:
-.\scripts\rebuild.ps1
+docker compose up -d --build
 
 # Logi backendu (Ctrl+C kończy podgląd):
 docker compose logs -f --tail 100 backend
