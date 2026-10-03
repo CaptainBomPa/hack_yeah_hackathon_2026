@@ -1,13 +1,29 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { USE_MOCKS } from '../api/client'
+import { isMocked, type Feature } from '../api/client'
 
-const NAV = [
-  { to: '/playground', label: 'Playground' },
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/audit', label: 'Audit log' },
+const NAV: { to: string; label: string; feature?: Feature }[] = [
+  { to: '/playground', label: 'Playground', feature: 'chat' },
+  { to: '/dashboard', label: 'Dashboard', feature: 'stats' },
+  { to: '/audit', label: 'Audit log', feature: 'audit' },
   { to: '/sessions', label: 'Session graph' },
-  { to: '/policies', label: 'Polityki' },
+  { to: '/policies', label: 'Polityki', feature: 'policy' },
 ]
+
+/** Oznaczenie, skąd ekran bierze dane: żywy gateway, dane przykładowe (mock) albo jeszcze nic. */
+function SourceTag({ feature }: { feature?: Feature }) {
+  if (!feature) return <span className="text-[10px] uppercase text-slate-600">wkrótce</span>
+  if (isMocked(feature))
+    return (
+      <span className="text-[10px] uppercase text-amber-400/80" title="Backend nie ma jeszcze tego endpointu — dane przykładowe">
+        mock
+      </span>
+    )
+  return (
+    <span className="text-[10px] uppercase text-emerald-400" title="Dane z żywego gatewaya">
+      live
+    </span>
+  )
+}
 
 export default function Layout() {
   return (
@@ -20,16 +36,14 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `rounded px-3 py-2 text-sm ${isActive ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`
+                `flex items-center justify-between rounded px-3 py-2 text-sm ${isActive ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`
               }
             >
               {item.label}
+              <SourceTag feature={item.feature} />
             </NavLink>
           ))}
         </nav>
-        {USE_MOCKS && (
-          <p className="mt-6 rounded bg-amber-900/40 px-2 py-1 text-xs text-amber-300">Tryb mock — bez gatewaya</p>
-        )}
       </aside>
       <main className="flex-1 overflow-auto p-6">
         <Outlet />

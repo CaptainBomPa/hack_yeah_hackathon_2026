@@ -1,29 +1,49 @@
 package pl.hackyeah.controllayer.chat;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.server.WebFilter;
+import pl.hackyeah.controllayer.audit.AuditEntry;
+import pl.hackyeah.controllayer.audit.AuditLog;
+import pl.hackyeah.controllayer.audit.AuditProperties;
 import pl.hackyeah.controllayer.chat.upstream.OllamaChatClient;
+import pl.hackyeah.controllayer.guard.GuardChain;
+import pl.hackyeah.controllayer.guard.GuardProperties;
 import pl.hackyeah.controllayer.model.ModelCatalog;
 import pl.hackyeah.controllayer.model.ModelCatalogProperties;
+import pl.hackyeah.controllayer.policy.ModelAccessPolicy;
+import pl.hackyeah.controllayer.policy.PolicyProperties;
 
 /**
- * Testuje pełną ścieżkę /v1/chat/completions (allowlista + wywołanie providera + mapowanie
- * odpowiedzi) bez prawdziwej Ollamy — zastępuje ją minimalnym stubem HTTP zwracającym odpowiedź
- * w jej natywnym, OpenAI-compatible kształcie.
+ * Testuje pełną ścieżkę /v1/chat/completions (allowlista katalogu + polityka roli + guardy +
+ * wywołanie providera + mapowanie odpowiedzi) bez prawdziwej Ollamy — zastępuje ją minimalnym
+ * stubem HTTP zwracającym odpowiedź w jej natywnym, OpenAI-compatible kształcie. Uwierzytelnienie
+ * symuluje filtr ustawiający kontekst bezpieczeństwa, bo bindToController omija łańcuch Security.
  */
 class ChatCompletionControllerTest {
 
     private HttpServer stubUpstream;
-    private WebTestClient client;
+    private String baseUrl;
+    private ModelCatalog catalog;
+    private ModelAccessPolicy policy;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -39,17 +59,14 @@ class ChatCompletionControllerTest {
             }
         });
         stubUpstream.start();
-        String baseUrl = "http://localhost:" + stubUpstream.getAddress().getPort();
+        baseUrl = "http://localhost:" + stubUpstream.getAddress().getPort();
 
-        var catalog = new ModelCatalog(new ModelCatalogProperties(
+        catalog = new ModelCatalog(new ModelCatalogProperties(
                 List.of(new ModelCatalogProperties.ModelEntry("test-model", baseUrl, true)),
                 Duration.ofSeconds(5)));
-        var upstreamClient = new OllamaChatClient(WebClient.builder());
-        var controller = new ChatCompletionController(catalog, upstreamClient);
-
-        client = WebTestClient.bindToController(controller)
-                .controllerAdvice(new ChatCompletionExceptionHandler())
-                .build();
+        policy = new ModelAccessPolicy(new PolicyProperties(Map.of(
+                "chat", new PolicyProperties.RolePolicy(List.of("test-model")),
+                "agent", new PolicyProperties.RolePolicy(List.of()))));
     }
 
     @AfterEach
@@ -58,8 +75,9 @@ class ChatCompletionControllerTest {
     }
 
     @Test
-    void allowsAndForwardsToTheConfiguredModel() {
-        client.post()
+    void allowsAndForwardsToTheConfiguredModelForAnAllowedRole() {
+        clientAs("chat")
+                .post()
                 .uri("/v1/chat/completions")
                 .bodyValue(new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "hej"))))
                 .exchange()
@@ -78,7 +96,8 @@ class ChatCompletionControllerTest {
 
     @Test
     void blocksAModelNotInTheCatalog() {
-        client.post()
+        clientAs("chat")
+                .post()
                 .uri("/v1/chat/completions")
                 .bodyValue(new ChatCompletionRequest("unknown-model", List.of(new ChatMessage("user", "hej"))))
                 .exchange()
@@ -89,5 +108,119 @@ class ChatCompletionControllerTest {
                 .isEqualTo("block")
                 .jsonPath("$.blockedBy")
                 .isEqualTo("model.allowlist");
+    }
+
+    @Test
+    void blocksAModelTheRoleIsNotAllowedToUse() {
+        clientAs("agent")
+                .post()
+                .uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "hej"))))
+                .exchange()
+                .expectStatus()
+                .isEqualTo(403)
+                .expectBody()
+                .jsonPath("$.action")
+                .isEqualTo("block")
+                .jsonPath("$.blockedBy")
+                .isEqualTo("policy.model-access");
+    }
+
+    @Test
+    void rejectsARequestWithoutAnAuthenticatedCaller() {
+        WebTestClient.bindToController(controller())
+                .controllerAdvice(new ChatCompletionExceptionHandler())
+                .build()
+                .post()
+                .uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "hej"))))
+                .exchange()
+                .expectStatus()
+                .isEqualTo(401)
+                .expectBody()
+                .jsonPath("$.blockedBy")
+                .isEqualTo("auth.required");
+    }
+
+    private WebTestClient clientAs(String role) {
+        return WebTestClient.bindToController(controller())
+                .controllerAdvice(new ChatCompletionExceptionHandler())
+                .webFilter(authenticatedAs(role))
+                .build();
+    }
+
+    @Test
+    void auditsEveryDecisionWithoutMessageContent() {
+        clientAs("chat")
+                .post()
+                .uri("/v1/chat/completions")
+                .header("X-Session-Id", "sess-1")
+                .bodyValue(new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "tajne-hej"))))
+                .exchange()
+                .expectStatus()
+                .isOk();
+        clientAs("chat")
+                .post()
+                .uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("unknown-model", List.of(new ChatMessage("user", "hej"))))
+                .exchange()
+                .expectStatus()
+                .isEqualTo(403);
+
+        assertEquals(2, audited.size());
+        AuditEntry allowed = audited.get(0);
+        assertEquals("allow", allowed.action());
+        assertEquals("tester", allowed.principal());
+        assertEquals("chat", allowed.role());
+        assertEquals("sess-1", allowed.sessionId());
+        assertEquals(200, allowed.httpStatus());
+        assertEquals(3, allowed.promptTokens());
+        assertFalse(allowed.toString().contains("tajne-hej"), "treść wiadomości nie może trafić do audytu");
+        AuditEntry blocked = audited.get(1);
+        assertEquals("block", blocked.action());
+        assertEquals("model.allowlist", blocked.blockedBy());
+        assertEquals(403, blocked.httpStatus());
+    }
+
+    @Test
+    void failsClosedWhenTheAuditLogIsUnavailable() {
+        failingAudit = true;
+        clientAs("chat")
+                .post()
+                .uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "hej"))))
+                .exchange()
+                .expectStatus()
+                .isEqualTo(503)
+                .expectBody()
+                .jsonPath("$.action")
+                .isEqualTo("block")
+                .jsonPath("$.blockedBy")
+                .isEqualTo("audit.write")
+                .jsonPath("$.message")
+                .doesNotExist();
+    }
+
+    private final List<AuditEntry> audited = new ArrayList<>();
+    private boolean failingAudit;
+
+    private ChatCompletionController controller() {
+        var upstreamClient = new OllamaChatClient(WebClient.builder());
+        var guardChain = new GuardChain(List.of(), new GuardProperties(true, null));
+        AuditLog auditLog = entry -> {
+            if (failingAudit) {
+                throw new IllegalStateException("database down");
+            }
+            audited.add(entry);
+        };
+        return new ChatCompletionController(catalog, policy, upstreamClient, guardChain, auditLog,
+                new AuditProperties(null, true, null));
+    }
+
+    private static WebFilter authenticatedAs(String role) {
+        var authentication = new UsernamePasswordAuthenticationToken("tester", "n/a",
+                List.of(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase(Locale.ROOT))));
+        return (exchange, chain) -> chain.filter(exchange)
+                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(authentication));
     }
 }

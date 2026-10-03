@@ -1,44 +1,211 @@
-import type { AuditEvent, ChatMessage, DashboardStats, GuardedChatResponse, PolicyInfo } from './types'
+import type { ChatParams } from './client'
+import { newId } from '../lib/id'
+import type {
+  AuditEvent,
+  AuditFilters,
+  AuditPage,
+  AuditVerifyResult,
+  ControlTrace,
+  DashboardStats,
+  GuardedChatResponse,
+  PolicyInfo,
+  TextSpan,
+} from './types'
 
 const delay = <T,>(value: T, ms = 300) => new Promise<T>((r) => setTimeout(() => r(value), ms))
 
-export function chat(messages: ChatMessage[]): Promise<GuardedChatResponse> {
-  const last = messages[messages.length - 1]?.content ?? ''
-  const requestId = crypto.randomUUID()
-
-  if (/ignore (all )?previous instructions/i.test(last)) {
-    return delay({
-      requestId,
-      action: 'block',
-      blockedBy: 'semantic.jailbreak',
-      trace: [
-        { policy: 'pii.detect', kind: 'deterministic', action: 'allow', latencyMs: 1 },
-        { policy: 'semantic.jailbreak', kind: 'semantic', action: 'block', latencyMs: 42, detail: 'score 0.97' },
-      ],
+function abortableDelay<T>(value: T, ms: number, signal?: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(value), ms)
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer)
+      reject(new DOMException('Aborted', 'AbortError'))
     })
-  }
-  if (/\b(?:\d[ -]?){13,16}\b/.test(last)) {
-    return delay({
-      requestId,
-      action: 'redact',
-      message: { role: 'assistant', content: 'Nie podawaj numeru karty [REDACTED] w czacie.' },
-      trace: [
-        { policy: 'pii.credit_card', kind: 'deterministic', action: 'redact', latencyMs: 1, detail: 'Luhn OK' },
-        { policy: 'semantic.jailbreak', kind: 'semantic', action: 'allow', latencyMs: 38 },
-      ],
-      usage: { promptTokens: 18, completionTokens: 12 },
-    })
-  }
-  return delay({
-    requestId,
-    action: 'allow',
-    message: { role: 'assistant', content: `(mock) Odpowiedź modelu na: "${last}"` },
-    trace: [
-      { policy: 'pii.detect', kind: 'deterministic', action: 'allow', latencyMs: 1 },
-      { policy: 'semantic.jailbreak', kind: 'semantic', action: 'allow', latencyMs: 40 },
-    ],
-    usage: { promptTokens: 12, completionTokens: 24 },
   })
+}
+
+const MOCK_MODELS = ['qwen2.5:1.5b-instruct-q4_K_M', 'qwen2.5:0.5b']
+const POLICY = { policyVersion: 'v3', policyHash: 'a1b2c3d' }
+
+function spansOf(text: string, re: RegExp, label: string): TextSpan[] {
+  return [...text.matchAll(new RegExp(re, 'g'))].map((m) => ({
+    start: m.index ?? 0,
+    end: (m.index ?? 0) + m[0].length,
+    label,
+  }))
+}
+
+/** Odwzorowuje ChatCompletionController.java + rozszerzenia trace z kontraktu §5.1. */
+export function chat({ model, messages, signal }: ChatParams): Promise<GuardedChatResponse> {
+  const last = messages[messages.length - 1]?.content ?? ''
+  const requestId = newId()
+  const allowlist: ControlTrace = {
+    policy: 'model.allowlist',
+    kind: 'deterministic',
+    stage: 'input',
+    mode: 'block',
+    action: 'allow',
+    latencyMs: 1,
+    detail: null,
+    status: 'ok',
+  }
+
+  if (!MOCK_MODELS.includes(model)) {
+    return abortableDelay(
+      {
+        requestId,
+        action: 'block',
+        message: null,
+        blockedBy: 'model.allowlist',
+        trace: [{ ...allowlist, action: 'block', detail: `model not allowed: ${model}` }],
+        usage: null,
+        ...POLICY,
+      },
+      150,
+      signal,
+    )
+  }
+
+  const pii: ControlTrace = {
+    policy: 'pii.detect',
+    kind: 'deterministic',
+    stage: 'input',
+    mode: 'redact',
+    action: 'allow',
+    latencyMs: 2,
+    detail: null,
+    status: 'ok',
+  }
+  const semantic: ControlTrace = {
+    policy: 'semantic.injection',
+    kind: 'semantic',
+    stage: 'input',
+    mode: 'block',
+    action: 'allow',
+    latencyMs: 44,
+    detail: null,
+    confidence: 0.04,
+    threshold: 0.8,
+    status: 'ok',
+    provider: 'mock-local',
+  }
+
+  if (/ignore (all )?previous instructions|zignoruj (wszystkie )?poprzednie/i.test(last)) {
+    const spans = spansOf(last, /ignore (all )?previous instructions|zignoruj (wszystkie )?poprzednie/i, 'INJECTION')
+    return abortableDelay(
+      {
+        requestId,
+        action: 'block',
+        message: null,
+        blockedBy: 'semantic.injection',
+        trace: [
+          allowlist,
+          pii,
+          { ...semantic, action: 'block', confidence: 0.97, detail: 'instruction override attempt', spans },
+        ],
+        usage: null,
+        ...POLICY,
+        status: 'ok',
+        latency: { totalMs: 52 },
+      },
+      400,
+      signal,
+    )
+  }
+
+  const pesel = spansOf(last, /\b\d{11}\b/, 'PII:PESEL')
+  if (pesel.length > 0) {
+    return abortableDelay(
+      {
+        requestId,
+        action: 'redact',
+        blockedBy: null,
+        message: {
+          role: 'assistant',
+          content: 'Widzę numer [REDACTED:PII:PESEL]. Nie przekazuj takich danych w czacie.',
+        },
+        trace: [
+          allowlist,
+          { ...pii, action: 'redact', detail: `${pesel.length} × PESEL (suma kontrolna OK)`, spans: pesel },
+          semantic,
+          { ...pii, policy: 'pii.output', stage: 'output', latencyMs: 1 },
+        ],
+        usage: { promptTokens: 22, completionTokens: 18 },
+        ...POLICY,
+        status: 'ok',
+        latency: { totalMs: 1630, upstreamMs: 1570 },
+      },
+      1600,
+      signal,
+    )
+  }
+
+  if (/system prompt|jailbreak|DAN/i.test(last)) {
+    return abortableDelay(
+      {
+        requestId,
+        action: 'monitor',
+        blockedBy: null,
+        message: { role: 'assistant', content: '(mock) Nie mogę ujawnić instrukcji systemowych.' },
+        trace: [
+          allowlist,
+          pii,
+          { ...semantic, mode: 'monitor', action: 'monitor', confidence: 0.86, detail: 'possible jailbreak (monitor only)' },
+        ],
+        usage: { promptTokens: 15, completionTokens: 11 },
+        ...POLICY,
+        status: 'ok',
+        latency: { totalMs: 1420, upstreamMs: 1360 },
+      },
+      1400,
+      signal,
+    )
+  }
+
+  if (/timeout|awaria/i.test(last)) {
+    return abortableDelay(
+      {
+        requestId,
+        action: 'block',
+        message: null,
+        blockedBy: 'semantic.injection',
+        trace: [
+          allowlist,
+          pii,
+          {
+            ...semantic,
+            action: 'block',
+            confidence: undefined,
+            latencyMs: 2000,
+            status: 'error',
+            detail: 'provider timeout after 2000 ms (fail-closed)',
+          },
+        ],
+        usage: null,
+        ...POLICY,
+        status: 'degraded',
+        latency: { totalMs: 2004 },
+      },
+      2000,
+      signal,
+    )
+  }
+
+  return abortableDelay(
+    {
+      requestId,
+      action: 'allow',
+      blockedBy: null,
+      message: { role: 'assistant', content: `(mock) Odpowiedź modelu ${model} na: "${last}"` },
+      trace: [allowlist, pii, semantic, { ...pii, policy: 'pii.output', stage: 'output', latencyMs: 1 }],
+      usage: { promptTokens: 12, completionTokens: 24 },
+      ...POLICY,
+      status: 'ok',
+      latency: { totalMs: 1290, upstreamMs: 1240 },
+    },
+    1300,
+    signal,
+  )
 }
 
 export function stats(): Promise<DashboardStats> {
@@ -65,21 +232,58 @@ export function stats(): Promise<DashboardStats> {
   })
 }
 
-export function auditEvents(): Promise<AuditEvent[]> {
-  const policies = ['pii.email', 'pii.credit_card', 'semantic.jailbreak', 'deterministic.code_injection']
-  const actions = ['redact', 'redact', 'block', 'block'] as const
-  return delay(
-    Array.from({ length: 20 }, (_, i) => ({
-      id: `evt-${i}`,
-      timestamp: new Date(Date.now() - i * 60_000).toISOString(),
-      callerId: `agent-${(i % 3) + 1}`,
-      sessionId: `sess-${(i % 4) + 1}`,
-      policy: policies[i % 4],
-      action: actions[i % 4],
-      redactedHash: `sha256:${(i * 2654435761).toString(16).slice(0, 12)}`,
-      policyVersion: 'v3',
-    })),
+const MOCK_AUDIT: AuditEvent[] = Array.from({ length: 120 }, (_, i) => {
+  const seq = 120 - i
+  const kind = seq % 5
+  const action = (['allow', 'redact', 'block', 'allow', 'block'] as const)[kind]
+  const blockedBy = kind === 2 ? 'model.allowlist' : kind === 4 ? 'policy.model-access' : null
+  const trace: ControlTrace[] = [
+    { policy: 'model.allowlist', kind: 'deterministic', action: kind === 2 ? 'block' : 'allow', latencyMs: 0, detail: kind === 2 ? 'model not allowed: llama3:70b' : null },
+    ...(kind === 4
+      ? [{ policy: 'policy.model-access', kind: 'deterministic' as const, action: 'block' as const, latencyMs: 0, detail: 'role agent may not use model qwen2.5:0.5b' }]
+      : []),
+    ...(kind === 1 ? [{ policy: 'PII-001', kind: 'deterministic' as const, action: 'redact' as const, latencyMs: 1, detail: '1 PESEL' }] : []),
+  ]
+  return {
+    seq,
+    requestId: `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`,
+    timestamp: new Date(Date.now() - i * 47_000).toISOString(),
+    principal: ['chat1', 'chat2', 'agent-runner', 'admin'][seq % 4],
+    role: ['chat', 'chat', 'agent', 'admin'][seq % 4],
+    sessionId: `sess-${(seq % 6) + 1}`,
+    model: kind === 2 ? 'llama3:70b' : kind === 4 ? 'qwen2.5:0.5b' : 'qwen2.5:1.5b-instruct-q4_K_M',
+    action,
+    blockedBy,
+    httpStatus: action === 'block' ? 403 : 200,
+    latencyMs: action === 'block' ? 2 : 900 + ((seq * 137) % 2400),
+    usage: action === 'block' ? null : { promptTokens: 20 + (seq % 40), completionTokens: 30 + (seq % 90) },
+    messageCount: 1 + (seq % 5),
+    trace,
+    recordHash: (seq * 2654435761).toString(16).padStart(64, 'a').slice(0, 64),
+  }
+})
+
+export function auditEvents(filters: AuditFilters, before?: number | null): Promise<AuditPage> {
+  const matches = MOCK_AUDIT.filter(
+    (e) =>
+      (!before || e.seq < before) &&
+      (!filters.action || e.action === filters.action) &&
+      (!filters.principal || e.principal === filters.principal) &&
+      (!filters.model || e.model === filters.model) &&
+      (!filters.blockedBy || e.blockedBy === filters.blockedBy) &&
+      (!filters.sessionId || e.sessionId === filters.sessionId),
   )
+  const items = matches.slice(0, 50)
+  return delay({ items, nextCursor: matches.length > 50 ? items[items.length - 1].seq : null })
+}
+
+export function auditEvent(requestId: string): Promise<AuditEvent> {
+  const event = MOCK_AUDIT.find((e) => e.requestId === requestId)
+  return event ? delay(event) : Promise.reject(new Error('404'))
+}
+
+export function auditVerify(): Promise<AuditVerifyResult> {
+  return delay({ valid: true, checked: MOCK_AUDIT.length, brokenAtSeq: null, reason: null })
 }
 
 let mockPolicy = `version: v3

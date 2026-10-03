@@ -1,0 +1,13 @@
+# Polityka uprawnień gatewaya (CRITERIA §4.1: jedna konfiguracja; docs/auth/).
+# Klucz pod `roles` to rola konta z `app_user.role` (chat | admin | agent).
+# `models` to tagi z katalogu `control-layer.models` w application.yml; `"*"` = wszystkie.
+# Rola bez wpisu albo model spoza listy = odmowa (403, blockedBy policy.model-access).
+# Wczytywane przy starcie; hot reload pojawi się w kolejnym kroku.
+policy:
+  roles:
+    admin:
+      models: ["*"]
+    agent:
+      models: ["qwen2.5:1.5b-instruct-q4_K_M"]
+    chat:
+      models: ["qwen2.5:1.5b-instruct-q4_K_M", "qwen2.5:0.5b"]

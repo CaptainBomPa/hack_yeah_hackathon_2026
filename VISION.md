@@ -162,7 +162,8 @@ hashy i bezpiecznych fragmentów. Eksport CSV/JSON musi zachowywać te same zasa
 ## 7. API i routing
 
 Wejściem dla playgroundu jest zgodny z OpenAI endpoint `POST /v1/chat/completions`, wzbogacony
-o identyfikator żądania i trace kontroli. API dashboardu korzysta z `/api/**`.
+o identyfikator żądania i trace kontroli. API dashboardu korzysta z `/api/**`. Kontrakt
+zaimplementowanych endpointów (OpenAPI 3.0): [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
 
 `/v1/chat/completions` **działa** (zastąpił tymczasowy passthrough `/llm/**`): waliduje `model`
 wobec allowlisty (`control-layer.models` w `backend/src/main/resources/application.yml` —
@@ -174,6 +175,18 @@ pierwsza realna kontrola (allowlista modeli) — reszta `trace` zapełni się, g
 Gateway — wybór providera zależy od treści body, a odpowiedź wymaga przekształcenia do własnego
 kontraktu, co w kontrolerze jest prostsze i mniej ryzykowne niż ręczne przepisywanie URI/body na
 poziomie filtrów Gateway. Inne route'y (np. do sidecara) mogą nadal być deklaratywne.
+
+Kontrole deterministyczne to beany `Guard` (`backend/.../guard`) spięte w łańcuch `GuardChain`,
+wołany z kontrolera przed (`INPUT`) i po (`OUTPUT`) wywołaniu modelu. Włączane i parametryzowane
+w `control-layer.guards` (`application.yml`); guard bez wpisu jest wyłączony. Pierwszy działający:
+`PII-001` (PESEL). Instrukcja: `docs/deterministic/how-to-write-a-rule.md`.
+
+**Dostęp do dashboardu (`/api/**` i UI) wymaga zalogowania**: OAuth2/OIDC obsługiwane w gatewayu
+(Spring Security `oauth2Login`, wzorzec BFF). Przeglądarka dostaje tylko ciasteczko sesji `HttpOnly`
+i token CSRF, tokeny IdP nie trafiają do JS. IdP wymienny w configu (Google; do decyzji Keycloak w
+compose jako offline default). W MVP każdy zalogowany ma pełny dostęp; role `viewer`/`admin` są
+rozszerzeniem. Logowanie ludzi nie dotyczy `/v1/*`. Kontrakt dashboardu i przepływy frontu:
+[`docs/frontend-flows-and-api.md`](docs/frontend-flows-and-api.md).
 
 Gateway działa na porcie `8000`, frontend na `3000`. Opcjonalny lokalny sidecar może działać
 na `8001`; zewnętrzny provider jest konfigurowany adresem i poświadczeniami środowiskowymi.
@@ -222,7 +235,12 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
 - `backend/` — działający szkielet Java 25/Spring Boot 4 z profilami H2/PostgreSQL, Flyway,
   Dockerfilem i **działającym** `POST /v1/chat/completions` (allowlista modeli + wywołanie
   providera + `GuardedChatResponse`, zob. §7) — bez reszty decision pipeline;
-- `frontend/` — działający szkielet widoków i mocków, bez podłączonego docelowego API;
+- audyt: **działa e2e** — każde żądanie `/v1/chat/completions` (także allow i odmowy) trafia do
+  tabeli `audit_event` (Flyway V3) z pełną ścieżką kontroli, bez treści wiadomości, w łańcuchu
+  HMAC (wykrywanie modyfikacji, `GET /api/audit/verify`); zapis przed odpowiedzią, fail-closed
+  (503) przy awarii; API `/api/audit/**` (rola ADMIN) i ekran Audit log we frontendzie;
+  na Postgresie dodatkowo trigger append-only (zob. `docs/deterministic/27-audit-logging.md`);
+- `frontend/` — Playground (czat + X-ray) i Audit log podłączone do backendu; reszta widoków na mockach;
 - provider analizy semantycznej ani opcjonalny lokalny sidecar nie mają jeszcze implementacji;
 - `docker-compose.yml` — docelowo wdrażany w całości na Raspberry Pi: baza, backend i Ollama
   żyją w jednej sieci docker na tym samym hoście (backend łączy się z Ollamą przez nazwę
@@ -230,7 +248,7 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
   (np. `bootRun` na laptopie z własną Ollamą pod `localhost:11434`, czyli wartość domyślna);
 - uwierzytelnianie i autoryzacja: plan w `docs/auth/`, implementacja jeszcze się nie zaczęła;
 - termin zgłoszenia projektu: 4.10.2026, 23:00 (RULES, pkt 5);
-- decision pipeline, polityki, guardraile, audyt i data-driven test suite są jeszcze do
+- decision pipeline, polityki, guardraile i data-driven test suite są jeszcze do
   zaimplementowania.
 
 Każda zmiana architektury, technologii, priorytetu wyróżników albo kontraktu publicznego wymaga

@@ -1,14 +1,34 @@
-// Kontrakt frontend <-> gateway. Szkic — do uzgodnienia z zespołem Java (VISION.md §4–5).
+// Kontrakt frontend <-> gateway: docs/frontend-flows-and-api.md.
+// Typy czatu odpowiadają 1:1 backend/src/main/java/pl/hackyeah/controllayer/chat/*.java;
+// pola oznaczone "rozszerzenie" są proponowane w kontrakcie §5.1 i backend może ich jeszcze nie wysyłać.
 
-export type GuardAction = 'allow' | 'redact' | 'block'
+/** Akcja decyzji (VISION.md §4). Backend dziś zwraca tylko allow/block. */
+export type GuardAction = 'allow' | 'monitor' | 'redact' | 'require_approval' | 'block'
 
-/** Wynik pojedynczej kontroli (deterministycznej lub semantycznej) dla jednego żądania. */
+/** Status techniczny kontroli/zależności (VISION.md §4). */
+export type TechStatus = 'ok' | 'degraded' | 'error'
+
+export interface TextSpan {
+  start: number
+  end: number
+  label: string
+}
+
+/** Wynik pojedynczej kontroli dla jednego żądania — ControlTrace.java. */
 export interface ControlTrace {
-  policy: string // np. "pii.credit_card", "semantic.jailbreak"
+  policy: string // np. "model.allowlist", "semantic.injection"
   kind: 'deterministic' | 'semantic'
   action: GuardAction
   latencyMs: number
-  detail?: string
+  detail: string | null
+  // rozszerzenia (kontrakt §5.1)
+  stage?: 'input' | 'output'
+  mode?: 'off' | 'monitor' | 'redact' | 'require_approval' | 'block'
+  confidence?: number
+  threshold?: number
+  status?: TechStatus
+  provider?: string
+  spans?: TextSpan[]
 }
 
 export interface ChatMessage {
@@ -16,26 +36,78 @@ export interface ChatMessage {
   content: string
 }
 
-/** Odpowiedź gatewaya na /v1/chat/completions wzbogacona o trace kontroli. */
+export interface ChatUsage {
+  promptTokens: number
+  completionTokens: number
+}
+
+/**
+ * Odpowiedź POST /v1/chat/completions — GuardedChatResponse.java.
+ * Ten sam kształt przychodzi dla 200, 400 (walidacja), 403 (polityka) i 502 (model nie odpowiada).
+ */
 export interface GuardedChatResponse {
   requestId: string
   action: GuardAction
-  message?: ChatMessage // brak, gdy action === 'block'
-  blockedBy?: string
+  message: ChatMessage | null // null, gdy action === 'block'
+  blockedBy: string | null
   trace: ControlTrace[]
-  usage?: { promptTokens: number; completionTokens: number }
+  usage: ChatUsage | null
+  // rozszerzenia (kontrakt §5.1)
+  policyVersion?: string
+  policyHash?: string
+  status?: TechStatus
+  latency?: { totalMs: number; upstreamMs?: number }
+  shadow?: { policyVersion: string; action: GuardAction; blockedBy?: string | null }
 }
 
-/** Wpis audit logu — nigdy surowe PII, tylko hash zredagowanego fragmentu (VISION.md §5). */
+export interface ModelOption {
+  tag: string
+  provider: string
+  enabled: boolean
+  status?: 'available' | 'unavailable'
+}
+
+/**
+ * Rekord audytu — AuditEventView.java (GET /api/audit/events). Bez treści promptów i odpowiedzi
+ * (VISION.md §6); `recordHash` to ogniwo łańcucha HMAC, sprawdzane przez GET /api/audit/verify.
+ */
 export interface AuditEvent {
-  id: string
+  seq: number
+  requestId: string
   timestamp: string
-  callerId: string
-  sessionId?: string
-  policy: string
+  principal: string | null
+  role: string | null
+  sessionId: string | null
+  model: string | null
   action: GuardAction
-  redactedHash?: string
-  policyVersion: string
+  blockedBy: string | null
+  httpStatus: number
+  latencyMs: number
+  usage: ChatUsage | null
+  messageCount: number
+  trace: ControlTrace[]
+  recordHash: string
+}
+
+export interface AuditPage {
+  items: AuditEvent[]
+  nextCursor: number | null
+}
+
+export interface AuditFilters {
+  action?: string
+  principal?: string
+  model?: string
+  blockedBy?: string
+  sessionId?: string
+}
+
+/** GET /api/audit/verify — AuditService.VerifyResult. */
+export interface AuditVerifyResult {
+  valid: boolean
+  checked: number
+  brokenAtSeq: number | null
+  reason: string | null
 }
 
 export interface DashboardStats {

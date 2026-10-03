@@ -1,0 +1,295 @@
+openapi: 3.0.3
+info:
+  title: AI Control Layer — API gatewaya
+  version: 0.1.0
+  description: |
+    Kontrakt publiczny gatewaya (VISION.md §7). Dokument opisuje stan zaimplementowany w backendzie.
+
+    **Zaimplementowane:** `POST /v1/chat/completions` (+ nagłówek `X-Session-Id`, zapisywany w audycie),
+    `GET /actuator/health`, audyt `/api/audit/**` (lista, rekord, eksport CSV/JSON, weryfikacja łańcucha).
+    **Jeszcze nie:** reszta `/api/**` (dashboard, polityki, modele), formularz logowania.
+
+    **Uwierzytelnianie:** HTTP Basic na kontach lokalnych z rolami (docs/auth/). Konta demo są w
+    `backend/config/users.yaml` i działają tylko w profilu `local`. Rola konta decyduje, które
+    modele może wołać (`backend/config/policy.yaml`).
+
+    **Kontrakt odpowiedzi:** każda odpowiedź `/v1/chat/completions` (także błędy 400, 403, 502) ma
+    kształt `GuardedChatResponse`. Wyjątek: 401 z warstwy Spring Security może nie mieć treści.
+servers:
+  - url: http://localhost:8000
+    description: Lokalnie (profil local, `./gradlew bootRun`)
+  - url: http://raspberrypi.local:8000
+    description: Raspberry Pi w sieci (plan wdrożenia)
+security:
+  - basicAuth: []
+paths:
+  /v1/chat/completions:
+    post:
+      summary: Czat przez gateway z kontrolami
+      description: |
+        Przepływ: uwierzytelnienie → allowlista katalogu modeli → polityka roli → guardy INPUT →
+        model → guardy OUTPUT. Odmowa na dowolnym etapie zwraca `action: block` z `blockedBy`
+        i nie wywołuje modelu (poza błędami guardów OUTPUT, które działają po wywołaniu).
+      operationId: chatCompletions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+            example:
+              model: qwen2.5:1.5b-instruct-q4_K_M
+              messages:
+                - role: user
+                  content: Jak napisać funkcję sortującą w Pythonie?
+      responses:
+        '200':
+          description: Model odpowiedział; `action` to `allow` albo `redact` (guardy zredagowały treść).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardedChatResponse'
+              example:
+                requestId: 6f1c2a3e-0000-4000-8000-000000000001
+                action: allow
+                message:
+                  role: assistant
+                  content: "def sort_items(items): return sorted(items)"
+                blockedBy: null
+                trace:
+                  - policy: model.allowlist
+                    kind: deterministic
+                    action: allow
+                    latencyMs: 3
+                    detail: null
+                usage:
+                  promptTokens: 18
+                  completionTokens: 40
+        '400':
+          description: Błędne żądanie (brak pól, zły JSON). `blockedBy` = `request.validation`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardedChatResponse'
+        '401':
+          description: |
+            Brak poświadczeń albo błędne hasło, albo konto wyłączone. Nagłówek `WWW-Authenticate: Basic`.
+            Treść odpowiedzi nie jest gwarantowana.
+        '403':
+          description: |
+            Odmowa kontroli. `blockedBy` mówi, która:
+            - `model.allowlist` — model spoza katalogu albo wyłączony;
+            - `policy.model-access` — rola konta nie ma dostępu do tego modelu (policy.roles);
+            - nazwa guardu (np. `PII-001`) — guard wejścia albo wyjścia zablokował treść.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardedChatResponse'
+        '502':
+          description: Awaria albo timeout modelu. `blockedBy` = `upstream-error`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardedChatResponse'
+  /actuator/health:
+    get:
+      summary: Stan gatewaya
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: Aplikacja działa.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+  /api/audit/events:
+    get:
+      summary: Lista rekordów audytu (najnowsze pierwsze)
+      description: |
+        Rola ADMIN. Jeden rekord na żądanie /v1/chat/completions (także allow) z pełną ścieżką
+        kontroli; bez treści promptów i odpowiedzi. Paginacja keyset: `before` = `nextCursor`.
+      operationId: auditEvents
+      parameters:
+        - { name: action, in: query, schema: { type: string } }
+        - { name: principal, in: query, schema: { type: string } }
+        - { name: model, in: query, schema: { type: string } }
+        - { name: blockedBy, in: query, schema: { type: string } }
+        - { name: sessionId, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: before, in: query, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        '200':
+          description: Strona rekordów.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/AuditEvent' } }
+                  nextCursor: { type: integer, format: int64, nullable: true }
+        '401': { description: Brak uwierzytelnienia. }
+        '403': { description: Rola inna niż ADMIN. }
+  /api/audit/events/{requestId}:
+    get:
+      summary: Jeden rekord audytu po requestId z odpowiedzi czatu
+      operationId: auditEvent
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Rekord.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditEvent' }
+        '404': { description: Brak rekordu. }
+  /api/audit/export:
+    get:
+      summary: Eksport audytu (CSV albo JSON) z tymi samymi filtrami co lista
+      description: Maks. 10 000 rekordów. Komórki CSV zaczynające się od = + - @ dostają prefiks ' (formula injection).
+      operationId: auditExport
+      parameters:
+        - { name: format, in: query, schema: { type: string, enum: [csv, json], default: csv } }
+      responses:
+        '200': { description: Plik do pobrania (Content-Disposition attachment). }
+  /api/audit/verify:
+    get:
+      summary: Weryfikacja łańcucha HMAC audytu
+      description: Przechodzi wszystkie rekordy i wskazuje pierwszy zmodyfikowany albo wyrwany z łańcucha.
+      operationId: auditVerify
+      responses:
+        '200':
+          description: Wynik weryfikacji.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid: { type: boolean }
+                  checked: { type: integer, format: int64 }
+                  brokenAtSeq: { type: integer, format: int64, nullable: true }
+                  reason: { type: string, nullable: true, example: record modified }
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: Konto lokalne z rolą (app_user). Hasło jest sprawdzane przez BCrypt.
+  schemas:
+    AuditEvent:
+      type: object
+      description: Rekord audytu (AuditEventView.java). Bez treści wiadomości.
+      properties:
+        seq: { type: integer, format: int64 }
+        requestId: { type: string }
+        timestamp: { type: string, format: date-time }
+        principal: { type: string, nullable: true }
+        role: { type: string, nullable: true }
+        sessionId: { type: string, nullable: true, description: Z nagłówka X-Session-Id, zsanitizowany. }
+        model: { type: string, nullable: true }
+        action: { type: string, example: redact }
+        blockedBy: { type: string, nullable: true }
+        httpStatus: { type: integer }
+        latencyMs: { type: integer, format: int64 }
+        usage: { $ref: '#/components/schemas/Usage' }
+        messageCount: { type: integer }
+        trace: { type: array, items: { $ref: '#/components/schemas/ControlTrace' } }
+        recordHash: { type: string, description: HMAC-SHA256 ogniwa łańcucha. }
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          description: Rola wiadomości, np. `system`, `user`, `assistant`.
+          example: user
+        content:
+          type: string
+          example: Cześć
+    ChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+          description: |
+            Dokładny tag modelu z katalogu `control-layer.models` (application.yml). Bez aliasów.
+            Czy rola może go użyć, decyduje `policy.roles` w policy.yaml.
+          example: qwen2.5:1.5b-instruct-q4_K_M
+        messages:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+    Usage:
+      type: object
+      required: [promptTokens, completionTokens]
+      properties:
+        promptTokens:
+          type: integer
+          example: 18
+        completionTokens:
+          type: integer
+          example: 40
+    ControlTrace:
+      type: object
+      description: Wynik jednej kontroli w tym żądaniu (do X-ray w UI).
+      required: [policy, kind, action, latencyMs]
+      properties:
+        policy:
+          type: string
+          description: |
+            Nazwa polityki/kontroli, np. `model.allowlist`, `policy.model-access`, `upstream-error`,
+            `request.validation` albo id guardu (`PII-001`).
+          example: model.allowlist
+        kind:
+          type: string
+          enum: [deterministic, semantic]
+        action:
+          $ref: '#/components/schemas/Action'
+        latencyMs:
+          type: integer
+          format: int64
+          example: 3
+        detail:
+          type: string
+          nullable: true
+          description: Opis dla człowieka (np. powód blokady). Brak danych wrażliwych.
+    Action:
+      type: string
+      enum: [allow, redact, block]
+    GuardedChatResponse:
+      type: object
+      required: [requestId, action, trace]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Identyfikator żądania, ten sam co w audycie i logach.
+        action:
+          $ref: '#/components/schemas/Action'
+        message:
+          nullable: true
+          description: Odpowiedź modelu. Brak (null), gdy `action` = `block`.
+          allOf:
+            - $ref: '#/components/schemas/ChatMessage'
+        blockedBy:
+          type: string
+          nullable: true
+          description: Nazwa kontroli, która odrzuciła żądanie. Null, gdy `action` = `allow` lub `redact`.
+          example: policy.model-access
+        trace:
+          type: array
+          items:
+            $ref: '#/components/schemas/ControlTrace'
+        usage:
+          nullable: true
+          description: Zużycie tokenów. Null przy `block`.
+          allOf:
+            - $ref: '#/components/schemas/Usage'

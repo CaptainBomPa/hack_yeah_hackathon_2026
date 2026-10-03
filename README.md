@@ -18,6 +18,10 @@ zakresu MVP i planu implementacji. Przeczytaj oba przed rozpoczęciem pracy.
 Aktualne instrukcje uruchomienia są w README poszczególnych komponentów. Stan implementacji
 i kolejność prac opisuje `VISION.md`.
 
+Przebudowa całego stacka w PowerShell: `.\scripts\rebuild.ps1`.
+Po zmianach backendu: `.\scripts\rebuild.ps1 -Target backend`.
+Szczegóły: [backend/README.md](backend/README.md#przebudowa-po-zmianach-powershell-z-katalogu-głównego-repo).
+
 ## IntelliJ / Gradle
 
 Otwórz **ten katalog** (root repo) w IntelliJ — `settings.gradle` w roocie to composite build
