@@ -6,10 +6,14 @@ import type {
   AuditVerifyResult,
   ChatMessage,
   CurrentUser,
-  DashboardStats,
+  DashboardData,
+  DashboardWindow,
   GuardedChatResponse,
   ModelOption,
-  PolicyInfo,
+  PolicyDocument,
+  PolicyError,
+  PolicyVersionSummary,
+  PolicyView,
 } from './types'
 import * as mocks from './mocks'
 
@@ -21,7 +25,7 @@ export type Feature = 'auth' | 'chat' | 'models' | 'stats' | 'audit' | 'policy'
  * Funkcje, które backend już implementuje — wołają żywy gateway mimo VITE_USE_MOCKS=true.
  * Dopisywać tu kolejne, gdy powstaną ich endpointy. VITE_LIVE_FEATURES nadpisuje tę listę.
  */
-const IMPLEMENTED_IN_BACKEND: Feature[] = ['auth', 'chat', 'audit']
+const IMPLEMENTED_IN_BACKEND: Feature[] = ['auth', 'chat', 'audit', 'stats', 'policy']
 
 const LIVE_FEATURES = new Set(
   import.meta.env.VITE_LIVE_FEATURES !== undefined
@@ -49,7 +53,7 @@ export class GatewayUnavailableError extends Error {
 /** Brak sesji/poświadczeń: 401 z gatewaya (docs/auth). */
 export class AuthRequiredError extends Error {
   constructor() {
-    super('Wymagane zalogowanie')
+    super('Sign-in required')
     this.name = 'AuthRequiredError'
   }
 }
@@ -89,13 +93,40 @@ async function loginLive(login: string, password: string): Promise<CurrentUser> 
   if (res.ok) return res.json() as Promise<CurrentUser>
   const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null
   if (body?.error?.message) throw new LoginError(body.error.code ?? 'error', body.error.message)
-  throw new LoginError('unavailable', `Logowanie nie powiodło się (HTTP ${res.status}). Czy backend działa?`)
+  throw new LoginError('unavailable', `Sign-in failed (HTTP ${res.status}). Is the backend running?`)
+}
+
+/** 422 z zapisu polityki — lista błędów ze ścieżką pola (PolicyValidator). */
+export class PolicyInvalidError extends Error {
+  constructor(readonly errors: PolicyError[]) {
+    super('Policy is invalid')
+    this.name = 'PolicyInvalidError'
+  }
+}
+
+/** 409 — ktoś zapisał nowszą wersję w międzyczasie; nic nie zostało nadpisane. */
+export class PolicyConflictError extends Error {
+  constructor(readonly currentVersion: number) {
+    super(`Someone saved policy v${currentVersion} in the meantime`)
+    this.name = 'PolicyConflictError'
+  }
+}
+
+async function policyWrite(path: string, method: string, body: unknown): Promise<PolicyView> {
+  const res = await fetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  if (res.ok) return res.json() as Promise<PolicyView>
+  if (res.status === 401) throw authRequired()
+  if (res.status === 403) throw new ForbiddenError()
+  const payload = (await res.json().catch(() => null)) as { error?: { errors?: PolicyError[]; currentVersion?: number; message?: string } } | null
+  if (res.status === 422) throw new PolicyInvalidError(payload?.error?.errors ?? [])
+  if (res.status === 409) throw new PolicyConflictError(payload?.error?.currentVersion ?? 0)
+  throw new Error(payload?.error?.message ?? `HTTP ${res.status}`)
 }
 
 /** 403 z /api/** — backend wymaga roli ADMIN (SecurityConfig). */
 export class ForbiddenError extends Error {
   constructor() {
-    super('Brak uprawnień — ten widok wymaga konta z rolą admin')
+    super('Access denied — this view requires an admin account')
     this.name = 'ForbiddenError'
   }
 }
@@ -108,7 +139,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 401) throw authRequired()
   if (res.status === 403) throw new ForbiddenError()
   if (res.status === 404 && path.startsWith('/api/'))
-    throw new Error(`Backend nie ma endpointu ${path.split('?')[0]} — działa starsza wersja? Przebuduj backend.`)
+    throw new Error(`Backend has no endpoint ${path.split('?')[0]} — running an older build? Rebuild the backend.`)
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`)
   return res.json() as Promise<T>
 }
@@ -149,7 +180,7 @@ async function chatLive({ model, messages, sessionId, signal }: ChatParams): Pro
     })
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
-    throw new GatewayUnavailableError(null, 'Brak połączenia z gatewayem')
+    throw new GatewayUnavailableError(null, 'Cannot reach the gateway')
   }
 
   if (res.status === 401) throw authRequired()
@@ -165,7 +196,7 @@ async function chatLive({ model, messages, sessionId, signal }: ChatParams): Pro
 
   throw new GatewayUnavailableError(
     res.status,
-    `Gateway odpowiedział HTTP ${res.status} spoza kontraktu${text ? `: ${text.slice(0, 200)}` : ''}`,
+    `Gateway returned HTTP ${res.status} outside the contract${text ? `: ${text.slice(0, 200)}` : ''}`,
   )
 }
 
@@ -196,9 +227,10 @@ export const api = {
       .filter(Boolean)
     return tags.map((tag) => ({ tag, provider: 'ollama', enabled: true }))
   },
-  stats(): Promise<DashboardStats> {
-    if (isMocked('stats')) return mocks.stats()
-    return request('/api/stats')
+  /** GET /api/dashboard — metryki z audytu w oknie czasowym. */
+  dashboard(window: DashboardWindow): Promise<DashboardData> {
+    if (isMocked('stats')) return mocks.dashboard(window)
+    return request(`/api/dashboard?window=${window}`)
   },
   /** GET /api/audit/events — najnowsze pierwsze; `before` = `nextCursor` z poprzedniej strony. */
   auditEvents(filters: AuditFilters = {}, before?: number | null): Promise<AuditPage> {
@@ -220,12 +252,36 @@ export const api = {
   auditExportUrl(format: 'csv' | 'json', filters: AuditFilters = {}): string {
     return `/api/audit/export?${auditQuery({ ...filters, format })}`
   },
-  policy(): Promise<PolicyInfo> {
+  policy(): Promise<PolicyView> {
     if (isMocked('policy')) return mocks.policy()
     return request('/api/policy')
   },
-  updatePolicy(raw: string): Promise<PolicyInfo> {
-    if (isMocked('policy')) return mocks.policy(raw)
-    return request('/api/policy', { method: 'PUT', body: JSON.stringify({ raw }) })
+  validatePolicy(document: PolicyDocument): Promise<{ valid: boolean; errors: PolicyError[] }> {
+    if (isMocked('policy')) return mocks.validatePolicy(document)
+    return request('/api/policy/validate', { method: 'POST', body: JSON.stringify({ document }) })
+  },
+  /** PUT /api/policy — nowa wersja jest aktywna od następnego żądania. Rzuca PolicyInvalidError / PolicyConflictError. */
+  savePolicy(baseVersion: number, document: PolicyDocument, comment: string): Promise<PolicyView> {
+    if (isMocked('policy')) return mocks.savePolicy(baseVersion, document, comment, 'ui')
+    return policyWrite('/api/policy', 'PUT', { baseVersion, document, comment })
+  },
+  importPolicy(baseVersion: number, yaml: string, comment: string): Promise<PolicyView> {
+    if (isMocked('policy')) return Promise.reject(new PolicyInvalidError([{ path: 'yaml', message: 'Import is not available in mock mode' }]))
+    return policyWrite('/api/policy/import', 'POST', { baseVersion, yaml, comment })
+  },
+  policyVersions(): Promise<PolicyVersionSummary[]> {
+    if (isMocked('policy')) return mocks.policyVersions()
+    return request('/api/policy/versions')
+  },
+  policyVersion(version: number): Promise<PolicyView> {
+    if (isMocked('policy')) return mocks.policyVersion(version)
+    return request(`/api/policy/versions/${version}`)
+  },
+  restorePolicy(version: number): Promise<PolicyView> {
+    if (isMocked('policy')) return mocks.restorePolicy(version)
+    return policyWrite(`/api/policy/versions/${version}/restore`, 'POST', {})
+  },
+  policyExportUrl(): string {
+    return '/api/policy/export'
   },
 }

@@ -9,20 +9,20 @@ const NAV: { to: string; label: string; feature?: Feature; adminOnly?: boolean }
   { to: '/dashboard', label: 'Dashboard', feature: 'stats', adminOnly: true },
   { to: '/audit', label: 'Audit log', feature: 'audit', adminOnly: true },
   { to: '/sessions', label: 'Session graph', adminOnly: true },
-  { to: '/policies', label: 'Polityki', feature: 'policy', adminOnly: true },
+  { to: '/policies', label: 'Policies', feature: 'policy', adminOnly: true },
 ]
 
 /** Oznaczenie, skąd ekran bierze dane: żywy gateway, dane przykładowe (mock) albo jeszcze nic. */
 function SourceTag({ feature }: { feature?: Feature }) {
-  if (!feature) return <span className="text-[10px] uppercase text-slate-600">wkrótce</span>
+  if (!feature) return <span className="text-[10px] uppercase text-slate-600">soon</span>
   if (isMocked(feature))
     return (
-      <span className="text-[10px] uppercase text-amber-400/80" title="Backend nie ma jeszcze tego endpointu — dane przykładowe">
+      <span className="text-[10px] uppercase text-amber-400/80" title="Backend does not implement this endpoint yet — sample data">
         mock
       </span>
     )
   return (
-    <span className="text-[10px] uppercase text-emerald-400" title="Dane z żywego gatewaya">
+    <span className="text-[10px] uppercase text-emerald-400" title="Live data from the gateway">
       live
     </span>
   )
@@ -55,9 +55,9 @@ export default function Layout() {
           <p className="truncate font-medium" title={user.login}>
             {user.login}
           </p>
-          <p className="text-xs text-slate-500">rola: {user.role ?? '—'}</p>
+          <p className="text-xs text-slate-500">role: {user.role ?? '—'}</p>
           <button onClick={logout} className="mt-2 text-xs text-slate-400 hover:text-slate-200">
-            Wyloguj
+            Sign out
           </button>
         </div>
       </aside>

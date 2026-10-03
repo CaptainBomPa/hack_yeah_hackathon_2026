@@ -29,7 +29,7 @@ export default function DecisionXray({ response, clientLatencyMs, userText }: Pr
           <ActionBadge action={response.action} />
           {response.blockedBy && (
             <span className="text-slate-300">
-              przez <code className="text-red-300">{response.blockedBy}</code>
+              by <code className="text-red-300">{response.blockedBy}</code>
             </span>
           )}
           {response.status && <StatusDot status={response.status} />}
@@ -39,18 +39,18 @@ export default function DecisionXray({ response, clientLatencyMs, userText }: Pr
           <dd className="truncate font-mono" title={response.requestId}>
             {response.requestId}
           </dd>
-          {response.policyVersion && (
+          {response.policyVersion != null && (
             <>
-              <dt>polityka</dt>
-              <dd className="font-mono">
-                {response.policyVersion}
-                {response.policyHash && ` · ${response.policyHash}`}
+              <dt>policy</dt>
+              <dd className="font-mono" title={response.policyHash ?? undefined}>
+                v{response.policyVersion}
+                {response.policyHash && ` · ${response.policyHash.slice(0, 8)}`}
               </dd>
             </>
           )}
           {response.usage && (
             <>
-              <dt>tokeny</dt>
+              <dt>tokens</dt>
               <dd>
                 {response.usage.promptTokens} in / {response.usage.completionTokens} out
               </dd>
@@ -58,7 +58,7 @@ export default function DecisionXray({ response, clientLatencyMs, userText }: Pr
           )}
           {response.budget && response.budget.cap !== null && (
             <>
-              <dt>budżet dziś</dt>
+              <dt>budget today</dt>
               <dd className={budgetPct(response.budget) >= 80 ? 'text-amber-300' : undefined}>
                 {response.budget.used} / {response.budget.cap} ({budgetPct(response.budget)}%)
               </dd>
@@ -68,14 +68,14 @@ export default function DecisionXray({ response, clientLatencyMs, userText }: Pr
         {response.shadow && (
           <p className="rounded bg-violet-950/50 px-2 py-1 text-xs text-violet-300">
             Shadow {response.shadow.policyVersion}: <ActionBadge action={response.shadow.action} />
-            {response.shadow.blockedBy && ` przez ${response.shadow.blockedBy}`}
+            {response.shadow.blockedBy && ` by ${response.shadow.blockedBy}`}
           </p>
         )}
       </section>
 
       {userText && spans.length > 0 && (
         <section>
-          <h4 className="mb-1 text-xs uppercase text-slate-500">Co wywołało decyzję</h4>
+          <h4 className="mb-1 text-xs uppercase text-slate-500">What triggered the decision</h4>
           <p className="whitespace-pre-wrap rounded bg-slate-800/60 p-2">
             <SpanHighlight text={userText} spans={spans} />
           </p>
@@ -85,7 +85,7 @@ export default function DecisionXray({ response, clientLatencyMs, userText }: Pr
       <LatencyBreakdown trace={response.trace} totalMs={totalMs} upstreamMs={upstreamMs} controlsMs={controlsMs} />
 
       <section>
-        <h4 className="mb-1 text-xs uppercase text-slate-500">Ścieżka kontroli ({response.trace.length})</h4>
+        <h4 className="mb-1 text-xs uppercase text-slate-500">Control path ({response.trace.length})</h4>
         <ol className="space-y-2">
           {response.trace.map((t, i) => (
             <TraceItem key={`${t.policy}-${i}`} trace={t} />
@@ -105,9 +105,9 @@ function TraceItem({ trace: t }: { trace: ControlTrace }) {
         <ActionBadge action={t.action} />
       </div>
       <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-400">
-        <span>{t.kind === 'semantic' ? 'semantyczna' : 'deterministyczna'}</span>
-        {t.stage && <span>{t.stage === 'input' ? 'wejście' : 'wyjście'}</span>}
-        {t.mode && <span>tryb: {t.mode}</span>}
+        <span>{t.kind === 'semantic' ? 'semantic' : 'deterministic'}</span>
+        {t.stage && <span>{t.stage === 'input' ? 'input' : 'output'}</span>}
+        {t.mode && <span>mode: {t.mode}</span>}
         <span>{t.latencyMs} ms</span>
         {t.provider && <span>provider: {t.provider}</span>}
         {t.status && <StatusDot status={t.status} />}
@@ -132,7 +132,7 @@ function ConfidenceBar({ confidence, threshold }: { confidence: number; threshol
         )}
       </div>
       <p className="mt-0.5 text-xs text-slate-400">
-        pewność {pct}%{threshold !== undefined && ` · próg ${Math.round(threshold * 100)}%`}
+        confidence {pct}%{threshold !== undefined && ` · threshold ${Math.round(threshold * 100)}%`}
       </p>
     </div>
   )
@@ -155,13 +155,13 @@ function LatencyBreakdown({
   const rows = [
     ...trace.map((t) => ({ label: t.policy, ms: t.latencyMs, color: t.kind === 'semantic' ? 'bg-violet-400' : 'bg-sky-400' })),
     ...(upstreamMs !== undefined ? [{ label: 'model (Ollama)', ms: upstreamMs, color: 'bg-slate-400' }] : []),
-    { label: upstreamMs !== undefined ? 'pozostałe' : 'model + sieć', ms: restMs, color: 'bg-slate-600' },
+    { label: upstreamMs !== undefined ? 'other' : 'model + network', ms: restMs, color: 'bg-slate-600' },
   ].filter((r) => r.ms > 0)
 
   return (
     <section>
       <h4 className="mb-1 text-xs uppercase text-slate-500">
-        Latencja: {totalMs} ms · kontrole {controlsMs} ms
+        Latency: {totalMs} ms · controls {controlsMs} ms
       </h4>
       <div className="space-y-1">
         {rows.map((r, i) => (

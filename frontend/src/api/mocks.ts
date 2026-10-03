@@ -1,4 +1,4 @@
-import { AuthRequiredError, LoginError, type ChatParams } from './client'
+import { AuthRequiredError, LoginError, PolicyConflictError, PolicyInvalidError, type ChatParams } from './client'
 import { newId } from '../lib/id'
 import type {
   AuditEvent,
@@ -8,9 +8,15 @@ import type {
   AuditVerifyResult,
   ControlTrace,
   CurrentUser,
-  DashboardStats,
+  DashboardData,
+  DashboardWindow,
+  GuardAction,
   GuardedChatResponse,
-  PolicyInfo,
+  PolicyCatalog,
+  PolicyDocument,
+  PolicyError,
+  PolicyVersionSummary,
+  PolicyView,
   TextSpan,
 } from './types'
 
@@ -27,7 +33,7 @@ function abortableDelay<T>(value: T, ms: number, signal?: AbortSignal): Promise<
 }
 
 const MOCK_MODELS = ['qwen2.5:1.5b-instruct-q4_K_M', 'qwen2.5:0.5b']
-const POLICY = { policyVersion: 'v3', policyHash: 'a1b2c3d' }
+const POLICY = { policyVersion: 1, policyHash: 'seedmock' }
 
 /** Symuluje rosnące dzienne zużycie budżetu (BudgetUsage.java) w trybie mock. */
 const MOCK_BUDGET_CAP = 20000
@@ -132,7 +138,7 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
         blockedBy: null,
         message: {
           role: 'assistant',
-          content: 'Widzę numer [REDACTED:PII:PESEL]. Nie przekazuj takich danych w czacie.',
+          content: 'I can see a number [REDACTED:PII:PESEL]. Please do not share such data in the chat.',
         },
         trace: [
           allowlist,
@@ -156,7 +162,7 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
         requestId,
         action: 'monitor',
         blockedBy: null,
-        message: { role: 'assistant', content: '(mock) Nie mogę ujawnić instrukcji systemowych.' },
+        message: { role: 'assistant', content: '(mock) I cannot reveal my system instructions.' },
         trace: [
           allowlist,
           pii,
@@ -206,7 +212,7 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
       requestId,
       action: 'allow',
       blockedBy: null,
-      message: { role: 'assistant', content: `(mock) Odpowiedź modelu ${model} na: "${last}"` },
+      message: { role: 'assistant', content: `(mock) Model ${model} answer to: "${last}"` },
       trace: [allowlist, pii, semantic, { ...pii, policy: 'pii.output', stage: 'output', latencyMs: 1 }],
       usage: { promptTokens: 12, completionTokens: 24 },
       budget: nextMockBudget(),
@@ -219,27 +225,63 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
   )
 }
 
-export function stats(): Promise<DashboardStats> {
+/** Agregaty jak DashboardService.java, liczone z MOCK_AUDIT — spójne z ekranem audytu w trybie mock. */
+export function dashboard(window: DashboardWindow): Promise<DashboardData> {
+  const lengthMs = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000 }[window]
+  const bucketMs = { '1h': 300_000, '24h': 3_600_000, '7d': 21_600_000 }[window]
+  const to = Date.now()
+  const from = (Math.floor((to - lengthMs) / bucketMs) + 1) * bucketMs
+  const events = MOCK_AUDIT.filter((e) => Date.parse(e.timestamp) >= from)
+  const zero = () => ({ allow: 0, monitor: 0, redact: 0, require_approval: 0, block: 0 }) as Record<string, number>
+  const byAction = zero()
+  const buckets = new Map<number, Record<string, number>>()
+  for (let s = from; s < to; s += bucketMs) buckets.set(s, zero())
+  const controls = new Map<string, number>()
+  const models = new Map<string, { requests: number; blocked: number; tokens: number }>()
+  const principals = new Map<string, { role: string | null; requests: number; blocked: number; tokens: number }>()
+  const latencies: number[] = []
+  let prompt = 0
+  let completion = 0
+  for (const e of events) {
+    byAction[e.action]++
+    const b = buckets.get(Math.floor(Date.parse(e.timestamp) / bucketMs) * bucketMs)
+    if (b) b[e.action]++
+    const tokens = (e.usage?.promptTokens ?? 0) + (e.usage?.completionTokens ?? 0)
+    prompt += e.usage?.promptTokens ?? 0
+    completion += e.usage?.completionTokens ?? 0
+    if (e.action !== 'block') latencies.push(e.latencyMs)
+    for (const t of e.trace) if (t.action !== 'allow') controls.set(`${t.policy}|${t.action}`, (controls.get(`${t.policy}|${t.action}`) ?? 0) + 1)
+    const blocked = e.action === 'block' ? 1 : 0
+    if (e.model) {
+      const s = models.get(e.model) ?? { requests: 0, blocked: 0, tokens: 0 }
+      models.set(e.model, { requests: s.requests + 1, blocked: s.blocked + blocked, tokens: s.tokens + tokens })
+    }
+    if (e.principal) {
+      const s = principals.get(e.principal) ?? { role: e.role, requests: 0, blocked: 0, tokens: 0 }
+      principals.set(e.principal, { ...s, requests: s.requests + 1, blocked: s.blocked + blocked, tokens: s.tokens + tokens })
+    }
+  }
+  latencies.sort((a, b) => a - b)
+  const pct = (p: number) => (latencies.length ? latencies[Math.max(Math.ceil((p / 100) * latencies.length) - 1, 0)] : null)
   return delay({
-    totalRequests: 1284,
-    blocked: 97,
-    redacted: 143,
-    budgetUsedPct: 37,
-    latencyP50Ms: 58,
-    latencyP95Ms: 210,
-    hitsPerPolicy: [
-      { policy: 'pii.email', count: 64 },
-      { policy: 'pii.credit_card', count: 41 },
-      { policy: 'semantic.jailbreak', count: 55 },
-      { policy: 'deterministic.code_injection', count: 23 },
-      { policy: 'ssrf.denylist', count: 12 },
+    window,
+    from: new Date(from).toISOString(),
+    to: new Date(to).toISOString(),
+    truncated: false,
+    totals: { requests: events.length, byAction, errors: 0 },
+    latency: { p50: pct(50), p95: pct(95), max: latencies.at(-1) ?? null, samples: latencies.length },
+    tokens: { prompt, completion },
+    timeline: [...buckets].map(([start, counts]) => ({ start: new Date(start).toISOString(), byAction: counts })),
+    controls: [...controls]
+      .map(([key, count]) => ({ policy: key.split('|')[0], action: key.split('|')[1] as GuardAction, count }))
+      .sort((a, b) => b.count - a.count),
+    models: [...models].map(([model, s]) => ({ model, ...s })).sort((a, b) => b.requests - a.requests),
+    principals: [...principals].map(([principal, s]) => ({ principal, ...s })).sort((a, b) => b.requests - a.requests),
+    budgets: [
+      { role: 'admin', usedTokens: 0, reservedTokens: 0, cap: null },
+      { role: 'agent', usedTokens: 12_400, reservedTokens: 0, cap: 100_000 },
+      { role: 'chat', usedTokens: 17_300, reservedTokens: 1_100, cap: 20_000 },
     ],
-    timeline: Array.from({ length: 12 }, (_, i) => ({
-      time: `${String(8 + i).padStart(2, '0')}:00`,
-      allow: 60 + ((i * 17) % 40),
-      redact: 5 + ((i * 7) % 15),
-      block: 3 + ((i * 5) % 12),
-    })),
   })
 }
 
@@ -270,6 +312,7 @@ const MOCK_AUDIT: AuditEvent[] = Array.from({ length: 120 }, (_, i) => {
     usage: action === 'block' ? null : { promptTokens: 20 + (seq % 40), completionTokens: 30 + (seq % 90) },
     messageCount: 1 + (seq % 5),
     trace,
+    policyVersion: 1,
     recordHash: (seq * 2654435761).toString(16).padStart(64, 'a').slice(0, 64),
   }
 })
@@ -309,19 +352,76 @@ export function auditVerify(): Promise<AuditVerifyResult> {
   return delay({ valid: true, checked: MOCK_AUDIT.length, brokenAtSeq: null, reason: null })
 }
 
-let mockPolicy = `version: v3
-pii:
-  credit_card: { action: redact }
-  email: { action: redact }
-semantic:
-  jailbreak: { action: block, threshold: 0.8 }
-budget:
-  daily_cap_tokens: 100000
-`
+// --- polityka (tryb mock): wersje w pamięci, zachowanie jak PolicyStore.java ---
+const MOCK_CATALOG: PolicyCatalog = {
+  models: [
+    { tag: 'qwen2.5:0.5b', baseUrl: 'http://ollama:11434' },
+    { tag: 'qwen2.5:1.5b-instruct-q4_K_M', baseUrl: 'http://ollama:11434' },
+  ],
+  guards: [
+    { id: 'PII-RECOGNIZERS', kind: 'deterministic', stages: ['INPUT', 'OUTPUT', 'TOOL_CALL'] },
+    { id: 'SEM-001', kind: 'semantic', stages: ['INPUT'] },
+  ],
+  piiRecognizers: [
+    { id: 'PII-001', name: 'PESEL', entity: 'PL_PESEL', defaultAction: 'redact' },
+    { id: 'PII-002', name: 'Email', entity: 'EMAIL_ADDRESS', defaultAction: 'redact' },
+    { id: 'PII-007', name: 'Payment card', entity: 'CREDIT_CARD', defaultAction: 'redact' },
+  ],
+  roleAccounts: { admin: 1, chat: 3, agent: 2 },
+}
+const MOCK_SEED: PolicyDocument = {
+  roles: {
+    admin: { models: ['*'], dailyTokens: null },
+    agent: { models: ['qwen2.5:1.5b-instruct-q4_K_M'], dailyTokens: 100000 },
+    chat: { models: ['qwen2.5:0.5b', 'qwen2.5:1.5b-instruct-q4_K_M'], dailyTokens: 20000 },
+  },
+  models: MOCK_CATALOG.models.map((m) => ({ tag: m.tag, enabled: true })),
+  guards: {
+    'PII-RECOGNIZERS': { enabled: true, order: 100, params: { threshold: 0.5, blockRecognizers: [], monitorRecognizers: [], disabledRecognizers: [] } },
+    'SEM-001': { enabled: true, order: 200, params: { blockThreshold: 0.998, timeoutMs: 4000, failureMode: 'closed' } },
+  },
+  limits: { maxInputTokens: 4000, maxOutputTokens: 1024 },
+}
+const mockVersions: PolicyView[] = [
+  { version: 1, hash: 'seedmock', author: 'seed', source: 'seed', comment: 'initial policy', createdAt: new Date().toISOString(), document: MOCK_SEED, catalog: MOCK_CATALOG },
+]
+const latest = () => mockVersions[mockVersions.length - 1]
+const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T
 
-export function policy(raw?: string): Promise<PolicyInfo> {
-  if (raw !== undefined) mockPolicy = raw
-  return delay({ version: 'v3', hash: 'a1b2c3d', updatedAt: new Date().toISOString(), raw: mockPolicy })
+export function policy(): Promise<PolicyView> {
+  return delay(clone(latest()))
+}
+
+export function validatePolicy(document: PolicyDocument): Promise<{ valid: boolean; errors: PolicyError[] }> {
+  const errors: PolicyError[] = []
+  if (!document.roles.admin) errors.push({ path: 'roles', message: "role 'admin' is required" })
+  for (const [role, count] of Object.entries(MOCK_CATALOG.roleAccounts)) {
+    if (count > 0 && !document.roles[role]) errors.push({ path: `roles.${role}`, message: `role '${role}' is used by ${count} account(s)` })
+  }
+  return delay({ valid: errors.length === 0, errors }, 150)
+}
+
+export async function savePolicy(baseVersion: number, document: PolicyDocument, comment: string, source: string): Promise<PolicyView> {
+  if (baseVersion !== latest().version) throw new PolicyConflictError(latest().version)
+  const { errors } = await validatePolicy(document)
+  if (errors.length) throw new PolicyInvalidError(errors)
+  const next = { ...clone(latest()), version: latest().version + 1, hash: Math.random().toString(16).slice(2, 10), author: 'mock-admin', source, comment: comment || null, createdAt: new Date().toISOString(), document: clone(document) }
+  mockVersions.push(next)
+  return delay(clone(next))
+}
+
+export function policyVersions(): Promise<PolicyVersionSummary[]> {
+  return delay(mockVersions.map(({ document: _d, catalog: _c, ...summary }) => summary).reverse())
+}
+
+export function policyVersion(version: number): Promise<PolicyView> {
+  const found = mockVersions.find((v) => v.version === version)
+  return found ? delay(clone(found)) : Promise.reject(new Error('404'))
+}
+
+export async function restorePolicy(version: number): Promise<PolicyView> {
+  const found = await policyVersion(version)
+  return savePolicy(latest().version, found.document, `restored from version ${version}`, 'restore')
 }
 
 // --- logowanie (tryb mock): dowolne hasło; rola z prefiksu loginu (chat*/agent*), reszta = admin ---
@@ -342,7 +442,7 @@ export function me(): Promise<CurrentUser> {
 }
 
 export function login(login: string, password: string): Promise<CurrentUser> {
-  if (!login.trim() || !password) return Promise.reject(new LoginError('invalid_credentials', 'Nieprawidłowy login lub hasło.'))
+  if (!login.trim() || !password) return Promise.reject(new LoginError('invalid_credentials', 'Invalid username or password.'))
   const role = login.startsWith('chat') ? 'chat' : login.startsWith('agent') ? 'agent' : 'admin'
   const user = { login: login.trim(), role }
   try {

@@ -53,7 +53,7 @@ korzystać z zewnętrznego API, jeśli daje ono najlepszą jakość i przewidywa
   +--> [PostgreSQL: polityki, audyt, budżety]
   +--> [Ollama na Raspberry Pi: chroniony LLM]
   +--> [Zewnętrzne LLM-y: klucze z env, budżet tokenów]
-  +--> [Tożsamość: lokalne konta (czat, admin) i klucze API (agenci); uprawnienia w policy.yaml]
+  +--> [Tożsamość: lokalne konta (czat, admin) i klucze API (agenci); uprawnienia w polityce (baza)]
 ```
 
 Java jest właścicielem orkiestracji, polityk i ostatecznej decyzji. Javowy interfejs providera
@@ -80,7 +80,7 @@ Operacje bazodanowe nie mogą wykonywać się na event loopie WebFlux: należy i
 | Persistencja | JPA/Hibernate + JDBC; H2 dla profilu `local`, PostgreSQL + Flyway dla `prod` |
 | Semantyka | Wymienny provider za interfejsem Javy: zewnętrzne API lub opcjonalny lokalny sidecar Python/FastAPI + Hugging Face/ONNX |
 | Chroniony model | Ollama na Raspberry Pi; bazowy model `qwen2.5:1.5b-instruct-q4_K_M` |
-| Frontend | React 18, TypeScript, Vite, Tailwind, Recharts |
+| Frontend | React 18, TypeScript, Vite, Tailwind, Recharts; **cały UI po angielsku** (teksty, komunikaty błędów zwracane do UI, formaty dat/liczb `en`) |
 | Uruchomienie | Docker Compose; docelowo backend + Ollama razem na Raspberry Pi (jedna sieć docker, §10); `OLLAMA_BASE_URL` nadpisuje adres dla lokalnego dev |
 | Autentykacja | Spring Security (reactive). Ludzie: lokalne konta w PostgreSQL (BCrypt), formularz i sesja w cookie. Maszyny: klucze API z hashem w bazie. Uprawnienia do modeli, narzędzi i pamięci: `policy.yaml`. Szczegóły: [`docs/auth/`](docs/auth/) |
 
@@ -107,8 +107,12 @@ osobny status techniczny `ok | degraded | error`. Profile `permissive`, `balance
 są nazwanymi zestawami trybów i progów, a nie drugim mechanizmem decyzyjnym.
 
 Nową wersję polityki można najpierw uruchomić w trybie shadow: jej decyzje są raportowane obok
-aktywnej wersji, ale nie wpływają na ruch. Polityka jest danymi (docelowo `policy.yaml`), ma
-wersję i hash oraz jest przeładowywana atomowo. Błędna wersja nie zastępuje ostatniej poprawnej.
+aktywnej wersji, ale nie wpływają na ruch. Polityka jest danymi: **źródłem prawdy jest tabela
+`policy_version` w bazie** (append-only, każda zmiana to nowa wersja z hashem, autorem i komentarzem;
+aktywna = najnowsza). Admin zmienia ją w UI (Policies) albo importem YAML; zapis aktywuje nową wersję
+atomowo, od następnego żądania, bez restartu. Błędna wersja nie przechodzi walidacji i nie zastępuje
+ostatniej poprawnej. `config/policy.yaml` i sekcje `application.yml` służą tylko do zbudowania
+wersji 1 przy pierwszym starcie (szczegóły: [`docs/policy-management-plan.md`](docs/policy-management-plan.md)).
 Nie wolno hardcodować progów i akcji w kontrolerach.
 
 ### Kontrole deterministyczne — Java
@@ -178,8 +182,14 @@ poziomie filtrów Gateway. Inne route'y (np. do sidecara) mogą nadal być dekla
 
 Kontrole deterministyczne to beany `Guard` (`backend/.../guard`) spięte w łańcuch `GuardChain`,
 wołany z kontrolera przed (`INPUT`) i po (`OUTPUT`) wywołaniu modelu. Włączane i parametryzowane
-w `control-layer.guards` (`application.yml`); guard bez wpisu jest wyłączony. Pierwszy działający:
-`PII-001` (PESEL). Instrukcja: `docs/deterministic/how-to-write-a-rule.md`.
+w `control-layer.guards` (`application.yml`); guard bez wpisu jest wyłączony. Instrukcja:
+`docs/deterministic/how-to-write-a-rule.md`. PII obsługuje jeden guard `PII-RECOGNIZERS`: silnik
+z konceptami Microsoft Presidio (recognizery jako dane w formacie YAML Presidio, nazwane walidatory
+checksum, słowa kontekstowe, score i próg, rozwiązywanie konfliktów, operatory anonymizera),
+zaimplementowany w Javie bez NLP. Recognizery `PII-001..PII-008` są w
+`backend/src/main/resources/rules/pii/recognizers.yaml`, a ich id trafiają do `trace`. Samo
+Presidio nie działa w ścieżce deterministycznej; może być jedynie implementacją providera
+semantycznego dla NER (imiona, adresy). Szczegóły: `docs/deterministic/pii-recognizers.md`.
 
 **Logowanie (docs/auth, bez SSO i zewnętrznego IdP — działa offline):** konta lokalne z
 `backend/config/users.yaml`, zakładane w bazie przy starcie (hasła BCrypt). Przeglądarka loguje się
@@ -205,7 +215,7 @@ bezpiecznego wpisu audytowego. Runner przekazuje klucz API z zmiennej `CL_API_KE
 
 Minimalny zestaw obejmuje:
 
-- poprawne prompty w języku polskim i angielskim;
+- poprawne prompty w języku angielskim;
 - PII/secrets i redakcję wejścia oraz wyjścia;
 - bezpośrednie i pośrednie prompt injection/jailbreak;
 - niedozwolone tool-calls, SSRF i command injection;
@@ -241,7 +251,9 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
   HMAC (wykrywanie modyfikacji, `GET /api/audit/verify`); zapis przed odpowiedzią, fail-closed
   (503) przy awarii; API `/api/audit/**` (rola ADMIN) i ekran Audit log we frontendzie;
   na Postgresie dodatkowo trigger append-only (zob. `docs/deterministic/27-audit-logging.md`);
-- `frontend/` — Playground (czat + X-ray) i Audit log podłączone do backendu; reszta widoków na mockach;
+- dashboard: **działa e2e** — `GET /api/dashboard?window=1h|24h|7d` liczy metryki z `audit_event` (akcje, 5xx,
+  latencja p50/p95, tokeny, oś czasu, top kontroli, per model/użytkownik) + budżety ról z `budget_counter`;
+- `frontend/` — Playground (czat + X-ray), Audit log i Dashboard podłączone do backendu; Polityki i Session graph jeszcze nie;
 - `semantic-sidecar/` — **działa**: lokalny sidecar Python/FastAPI (port 8001) z klasyfikatorem prompt injection
   `Horizon-Labs/prompt-injection-guard-small` (Apache-2.0, 141M, kalibrowany), wołany przez guard `SEM-001`
   (próg blokady 0,9 w `application.yml`, fail-closed). Pokrywa P1, P2, P5; P3 i P4 raportuje jako brak pokrycia
@@ -251,7 +263,10 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
   usługi `ollama`, nie przez LAN). `OLLAMA_BASE_URL` pozwala deweloperowi nadpisać to lokalnie
   (np. `bootRun` na laptopie z własną Ollamą pod `localhost:11434`, czyli wartość domyślna);
 - uwierzytelnianie: **działa** — konta z `users.yaml` w bazie, ekran logowania we frontendzie
-  (sesja), HTTP Basic dla maszyn, polityka ról w `config/policy.yaml` (zob. §7, `docs/auth/`);
+  (sesja), HTTP Basic dla maszyn, polityka ról w bazie (zob. §4, §7, `docs/auth/`);
+- polityki: **działa e2e** — tabela `policy_version` (Flyway V5) jako źródło prawdy, `PolicyStore` z
+  atomową podmianą, walidacja, API `/api/policy/**` (zapis, historia, restore, eksport/import YAML),
+  ekran Policies; audyt i odpowiedź czatu niosą `policyVersion` (Flyway V6);
 - termin zgłoszenia projektu: 4.10.2026, 23:00 (RULES, pkt 5);
 - decision pipeline, polityki, guardraile i data-driven test suite są jeszcze do
   zaimplementowania.

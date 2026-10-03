@@ -61,7 +61,7 @@ Opisane w §4a.
 5. Zdarzenie trafia do audytu, SSE `request.completed` odświeża Przegląd i Zdarzenia.
 
 ### F2. Red Team Arena (P0, wyróżnik B)
-1. `/arena` → `GET /api/arena/corpora` (korpusy: nazwa, liczba przypadków ataków i benign, kategorie, języki PL/EN).
+1. `/arena` → `GET /api/arena/corpora` (korpusy: nazwa, liczba przypadków ataków i benign, kategorie).
 2. Wybór korpusu i modelu → `POST /api/arena/runs` → `{ runId }`.
    Backend wysyła każdy przypadek **dwiema ścieżkami**: bezpośrednio do modelu (bez ochrony) i przez Control Layer.
 3. Postęp na żywo: SSE `arena.progress` (licznik) i `arena.case` (wynik przypadku), albo polling `GET /api/arena/runs/{id}`.
@@ -69,7 +69,7 @@ Opisane w §4a.
    - porównanie: ataki, które przeszły bez ochrony vs przez Control Layer;
    - **benign-block rate** (fałszywe alarmy na nieszkodliwych promptach);
    - narzut latencji p50/p95;
-   - rozbicie per kategoria i język;
+   - rozbicie per kategoria;
    - lista przypadków, kliknięcie → X-ray tego żądania.
 5. Historia przebiegów: `GET /api/arena/runs`, żeby pokazać poprawę między wersjami polityki.
 

@@ -33,6 +33,8 @@ import pl.hackyeah.controllayer.guard.GuardContext;
 import pl.hackyeah.controllayer.guard.Stage;
 import pl.hackyeah.controllayer.model.ModelCatalog;
 import pl.hackyeah.controllayer.model.ModelCatalogProperties;
+import pl.hackyeah.controllayer.policy.ActivePolicy;
+import pl.hackyeah.controllayer.policy.PolicySource;
 import pl.hackyeah.controllayer.policy.ModelAccessPolicy;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -62,10 +64,11 @@ public class ChatCompletionController {
     private final GuardChain guardChain;
     private final AuditLog auditLog;
     private final AuditProperties auditProperties;
+    private final PolicySource policySource;
 
     public ChatCompletionController(ModelCatalog modelCatalog, ModelAccessPolicy modelAccessPolicy,
             BudgetGate budgetGate, OllamaChatClient upstreamClient, GuardChain guardChain, AuditLog auditLog,
-            AuditProperties auditProperties) {
+            AuditProperties auditProperties, PolicySource policySource) {
         this.modelCatalog = modelCatalog;
         this.modelAccessPolicy = modelAccessPolicy;
         this.budgetGate = budgetGate;
@@ -73,6 +76,7 @@ public class ChatCompletionController {
         this.guardChain = guardChain;
         this.auditLog = auditLog;
         this.auditProperties = auditProperties;
+        this.policySource = policySource;
     }
 
     @PostMapping("/v1/chat/completions")
@@ -82,13 +86,15 @@ public class ChatCompletionController {
         String requestId = UUID.randomUUID().toString();
         Instant occurredAt = Instant.now();
         long startedAt = System.nanoTime();
+        // Jeden snapshot polityki na całe żądanie: zapis nowej wersji w trakcie nie miesza dwóch wersji.
+        ActivePolicy policy = policySource.current();
 
         return ReactiveSecurityContextHolder.getContext()
                 .flatMap(context -> Mono.justOrEmpty(callerOf(context.getAuthentication())))
-                .flatMap(caller -> complete(request, caller, requestId, startedAt)
+                .flatMap(caller -> complete(policy, request, caller, requestId, startedAt)
                         .map(response -> new Outcome(caller, response)))
                 .switchIfEmpty(Mono.fromSupplier(() -> new Outcome(null, unauthenticated(requestId))))
-                .flatMap(outcome -> audited(outcome, request, sessionId, requestId, occurredAt, startedAt));
+                .flatMap(outcome -> audited(policy, outcome, request, sessionId, requestId, occurredAt, startedAt));
     }
 
     private record Outcome(Caller caller, ResponseEntity<GuardedChatResponse> response) {}
@@ -98,7 +104,8 @@ public class ChatCompletionController {
      * tylko metadane i ścieżka kontroli. Gdy zapis się nie uda, a audyt jest fail-closed,
      * klient dostaje 503 zamiast odpowiedzi modelu (AUDIT-008).
      */
-    private Mono<ResponseEntity<GuardedChatResponse>> audited(Outcome outcome, ChatCompletionRequest request,
+    private Mono<ResponseEntity<GuardedChatResponse>> audited(ActivePolicy policy, Outcome outcome,
+            ChatCompletionRequest request,
             String sessionId, String requestId, Instant occurredAt, long startedAt) {
         GuardedChatResponse body = outcome.response().getBody();
         Caller caller = outcome.caller();
@@ -116,27 +123,32 @@ public class ChatCompletionController {
                 body.usage() == null ? null : body.usage().promptTokens(),
                 body.usage() == null ? null : body.usage().completionTokens(),
                 request.messages().size(),
-                body.trace());
+                body.trace(),
+                policy.version());
+        var stamped = ResponseEntity.status(outcome.response().getStatusCode())
+                .body(body.withPolicy(policy.version(), policy.hash()));
         return Mono.fromRunnable(() -> auditLog.append(entry))
                 .subscribeOn(Schedulers.boundedElastic())
-                .thenReturn(outcome.response())
+                .thenReturn(stamped)
                 .onErrorResume(error -> {
                     log.error("requestId={} audit write failed failClosed={}",
                             requestId, auditProperties.failClosed(), error);
                     if (!auditProperties.failClosed()) {
-                        return Mono.just(outcome.response());
+                        return Mono.just(stamped);
                     }
                     var trace = new ArrayList<>(body.trace());
                     trace.add(new ControlTrace(AUDIT_POLICY, "deterministic", "block", elapsedMillis(startedAt),
                             "audit log unavailable (fail-closed)"));
                     return Mono.just(ResponseEntity.status(503)
-                            .body(GuardedChatResponse.block(requestId, AUDIT_POLICY, trace)));
+                            .body(GuardedChatResponse.block(requestId, AUDIT_POLICY, trace)
+                                    .withPolicy(policy.version(), policy.hash())));
                 });
     }
 
-    private Mono<ResponseEntity<GuardedChatResponse>> complete(ChatCompletionRequest request, Caller caller,
+    private Mono<ResponseEntity<GuardedChatResponse>> complete(ActivePolicy policy, ChatCompletionRequest request,
+            Caller caller,
             String requestId, long startedAt) {
-        var allowedModel = modelCatalog.resolveAllowed(request.model());
+        var allowedModel = modelCatalog.resolveAllowed(policy, request.model());
         if (allowedModel.isEmpty()) {
             log.info("requestId={} model={} action=block reason=not-allowed", requestId, request.model());
             var trace = List.of(new ControlTrace(
@@ -149,7 +161,7 @@ public class ChatCompletionController {
                     .body(GuardedChatResponse.block(requestId, MODEL_ALLOWLIST_POLICY, trace)));
         }
 
-        if (!modelAccessPolicy.allowsModel(caller.role(), request.model())) {
+        if (!modelAccessPolicy.allowsModel(policy, caller.role(), request.model())) {
             log.info("requestId={} caller={} role={} model={} action=block reason=policy",
                     requestId, caller.login(), caller.role(), request.model());
             var policyTrace = List.of(new ControlTrace(
@@ -167,7 +179,7 @@ public class ChatCompletionController {
         var trace = new ArrayList<ControlTrace>();
         trace.add(new ControlTrace(MODEL_ALLOWLIST_POLICY, "deterministic", "allow", elapsedMillis(startedAt), null));
 
-        return budgetGate.check(caller.role(), request.messages()).flatMap(budget -> {
+        return budgetGate.check(policy, caller.role(), request.messages()).flatMap(budget -> {
             trace.add(budget.toTrace(elapsedMillis(startedAt)));
             if (!budget.allowed()) {
                 log.info("requestId={} caller={} role={} action=block blockedBy={}",
@@ -179,7 +191,7 @@ public class ChatCompletionController {
                         .body(GuardedChatResponse.block(requestId, budget.blockedBy(), trace, budgetUsage)));
             }
 
-            return Mono.fromCallable(() -> guardInput(requestId, request.messages()))
+            return Mono.fromCallable(() -> guardInput(policy, requestId, request.messages()))
                     .subscribeOn(Schedulers.boundedElastic())
                     .flatMap(input -> {
                         trace.addAll(input.trace());
@@ -200,7 +212,7 @@ public class ChatCompletionController {
                                 .flatMap(response -> budgetGate
                                         .reconcile(caller.role(), budget, actualTokensOf(response))
                                         .flatMap(usedAfter -> Mono.fromCallable(() -> buildResponse(
-                                                        requestId, input.action(), response, trace,
+                                                        policy, requestId, input.action(), response, trace,
                                                         budget.toUsage(usedAfter)))
                                                 .subscribeOn(Schedulers.boundedElastic())))
                                 .doOnNext(entity -> log.info("requestId={} model={} action={} latencyMs={}",
@@ -255,13 +267,13 @@ public class ChatCompletionController {
     }
 
     /** Guardy INPUT dla każdej wiadomości (historia też może zawierać dane wrażliwe). */
-    private InputCheck guardInput(String requestId, List<ChatMessage> messages) {
+    private InputCheck guardInput(ActivePolicy policy, String requestId, List<ChatMessage> messages) {
         var guarded = new ArrayList<ChatMessage>();
         var trace = new ArrayList<ControlTrace>();
         var action = Action.ALLOW;
         for (ChatMessage message : messages) {
             GuardChainResult result =
-                    guardChain.run(Stage.INPUT, new GuardContext(requestId, message.content(), null, null));
+                    guardChain.run(policy, Stage.INPUT, new GuardContext(requestId, message.content(), null, null));
             trace.addAll(result.trace());
             if (result.blocked()) {
                 return new InputCheck(Action.BLOCK, result.blockedBy(), messages, trace);
@@ -275,11 +287,11 @@ public class ChatCompletionController {
     }
 
     /** Guardy OUTPUT na odpowiedzi modelu i złożenie końcowej odpowiedzi gatewaya. */
-    private ResponseEntity<GuardedChatResponse> buildResponse(String requestId, Action inputAction,
+    private ResponseEntity<GuardedChatResponse> buildResponse(ActivePolicy policy, String requestId, Action inputAction,
             OpenAiChatCompletionResponse response, List<ControlTrace> trace, BudgetUsage budgetUsage) {
         ChatMessage reply = extractMessage(response);
         GuardChainResult output =
-                guardChain.run(Stage.OUTPUT, new GuardContext(requestId, reply.content(), null, null));
+                guardChain.run(policy, Stage.OUTPUT, new GuardContext(requestId, reply.content(), null, null));
         trace.addAll(output.trace());
         if (output.blocked()) {
             return ResponseEntity.status(403)

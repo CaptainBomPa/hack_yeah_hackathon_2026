@@ -33,6 +33,8 @@ import pl.hackyeah.controllayer.guard.GuardProperties;
 import pl.hackyeah.controllayer.model.ModelCatalog;
 import pl.hackyeah.controllayer.model.ModelCatalogProperties;
 import pl.hackyeah.controllayer.policy.ModelAccessPolicy;
+import pl.hackyeah.controllayer.policy.PolicyDocument;
+import pl.hackyeah.controllayer.policy.PolicySource;
 import pl.hackyeah.controllayer.policy.PolicyProperties;
 
 /**
@@ -46,6 +48,7 @@ class ChatCompletionControllerTest {
     private HttpServer stubUpstream;
     private String baseUrl;
     private ModelCatalog catalog;
+    private ModelCatalogProperties catalogProperties;
     private ModelAccessPolicy policy;
     private PolicyProperties policyProperties;
 
@@ -65,9 +68,10 @@ class ChatCompletionControllerTest {
         stubUpstream.start();
         baseUrl = "http://localhost:" + stubUpstream.getAddress().getPort();
 
-        catalog = new ModelCatalog(new ModelCatalogProperties(
+        catalogProperties = new ModelCatalogProperties(
                 List.of(new ModelCatalogProperties.ModelEntry("test-model", baseUrl, true)),
-                Duration.ofSeconds(5)));
+                Duration.ofSeconds(5));
+        catalog = new ModelCatalog(catalogProperties);
         policyProperties = new PolicyProperties(Map.of(
                 "chat", new PolicyProperties.RolePolicy(List.of("test-model"), null),
                 "agent", new PolicyProperties.RolePolicy(List.of(), null)));
@@ -211,7 +215,8 @@ class ChatCompletionControllerTest {
 
     private ChatCompletionController controller() {
         var upstreamClient = new OllamaChatClient(WebClient.builder());
-        var guardChain = new GuardChain(List.of(), new GuardProperties(true, null));
+        var guardProperties = new GuardProperties(true, null);
+        var guardChain = new GuardChain(List.of(), guardProperties);
         AuditLog auditLog = entry -> {
             if (failingAudit) {
                 throw new IllegalStateException("database down");
@@ -222,8 +227,11 @@ class ChatCompletionControllerTest {
         // więc BudgetGate nigdy nie dotyka JdbcTemplate — bezpiecznie można przekazać null.
         var budgetGate = new BudgetGate(
                 policyProperties, new BudgetLimitsProperties(null, null), new BudgetService(null));
+        // Kontroler bierze jeden snapshot polityki na żądanie — musi obejmować to samo co komponenty powyżej.
+        var policySource = PolicySource.fixed(PolicyDocument.fromConfig(
+                policyProperties, catalogProperties, guardProperties, new BudgetLimitsProperties(null, null)));
         return new ChatCompletionController(catalog, policy, budgetGate, upstreamClient, guardChain, auditLog,
-                new AuditProperties(null, true, null));
+                new AuditProperties(null, true, null), policySource);
     }
 
     private static WebFilter authenticatedAs(String role) {

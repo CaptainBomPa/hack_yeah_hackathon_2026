@@ -71,7 +71,7 @@ Jako **juror** chcę wpisać dowolny prompt i zobaczyć, co gateway z nim zrobi�
 - [ ] Wiadomość oznaczona akcją: allow, monitor (ostrzeżenie „wykryto, przepuszczono”), redact (podświetlone `[REDACTED:…]`), require_approval/block (komunikat z `blockedBy`).
 - [ ] Błędy `400` (walidacja), `403` (model spoza allowlisty), `502` (model nie odpowiada) pokazane jako czytelne decyzje, nie jako „coś poszło nie tak”.
 - [ ] Stan „model myśli…” z licznikiem czasu i Anuluj (Ollama na Pi: kilka–kilkanaście s).
-- [ ] Gotowe przykładowe prompty PL i EN: benign, PII, sekret, jailbreak, prompt injection.
+- [ ] Gotowe przykładowe prompty (po angielsku, jak cały UI): benign, PII, sekret, jailbreak, prompt injection.
 - **Done E2E możliwe od razu**, bo endpoint istnieje.
 
 ### FE-07 Wybór modelu · P0 · S
@@ -96,7 +96,7 @@ Jako **juror/analityk** chcę zobaczyć, dlaczego zapadła decyzja, żeby uwierz
 
 ### FE-09 Uruchomienie przebiegu Arena · P0 · M
 Jako **juror** chcę jednym kliknięciem puścić korpus ataków przeciw modelowi bez ochrony i przez Control Layer, żeby zobaczyć mierzalny dowód odporności.
-- [ ] Lista korpusów (`GET /api/arena/corpora`): liczba ataków i benign, kategorie, języki.
+- [ ] Lista korpusów (`GET /api/arena/corpora`): liczba ataków i benign, kategorie.
 - [ ] Wybór korpusu i modelu → `POST /api/arena/runs`.
 - [ ] Postęp na żywo (SSE `arena.progress`/`arena.case` albo polling): pasek, licznik, ostatnie przypadki.
 
@@ -105,7 +105,7 @@ Jako **juror/manager** chcę porównania „bez ochrony vs z ochroną” w liczb
 - [ ] Nagłówek: ataki, które przeszły bez ochrony vs przez Control Layer (np. 31/40 → 3/40).
 - [ ] **Benign-block rate** (fałszywe alarmy) jako osobny, równie widoczny wskaźnik.
 - [ ] Narzut latencji p50/p95.
-- [ ] Rozbicie per kategoria i język (PL/EN).
+- [ ] Rozbicie per kategoria.
 - [ ] Tabela przypadków z filtrami; kliknięcie → X-ray żądania chronionego (FE-08).
 - [ ] Wersja polityki, przy której był przebieg.
 

@@ -23,4 +23,5 @@ public record AuditEntry(
         Integer promptTokens,
         Integer completionTokens,
         int messageCount,
-        List<ControlTrace> trace) {}
+        List<ControlTrace> trace,
+        Long policyVersion) {}

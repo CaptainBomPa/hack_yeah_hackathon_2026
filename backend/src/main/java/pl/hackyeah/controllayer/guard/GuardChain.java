@@ -9,14 +9,20 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import pl.hackyeah.controllayer.chat.ControlTrace;
 import pl.hackyeah.controllayer.guard.GuardChainResult.Action;
+import pl.hackyeah.controllayer.policy.ActivePolicy;
+import pl.hackyeah.controllayer.policy.PolicyDocument;
+import pl.hackyeah.controllayer.policy.PolicySource;
 
 /**
  * Chain of responsibility: odpala po kolei włączone guardy danego etapu. `Allow` → dalej,
  * `Redact` → podmienia tekst i idzie dalej, `Block` → przerywa. Wyjątek w guardzie = Block
- * (fail-closed). Łańcuch jest budowany raz na starcie z beanów `Guard` i `GuardProperties`.
+ * (fail-closed). Które guardy, w jakiej kolejności i z jakimi parametrami — to aktywna polityka
+ * ({@link PolicySource}); łańcuch jest budowany raz na wersję polityki i cache'owany, więc zmiana
+ * polityki z UI działa od następnego żądania.
  */
 @Service
 public class GuardChain {
@@ -25,47 +31,48 @@ public class GuardChain {
 
     private record Entry(Guard guard, GuardSettings settings, int order) {}
 
-    private final Map<Stage, List<Entry>> byStage = new EnumMap<>(Stage.class);
+    /** Łańcuch zbudowany dla jednej wersji polityki. */
+    private record Built(long version, String hash, Map<Stage, List<Entry>> byStage) {}
 
-    public GuardChain(List<Guard> guards, GuardProperties properties) {
+    private final List<Guard> guards;
+    private final PolicySource policySource;
+    private volatile Built built;
+
+    @Autowired
+    public GuardChain(List<Guard> guards, PolicySource policySource) {
         var knownIds = new HashSet<String>();
         for (Guard guard : guards) {
             if (!knownIds.add(guard.id())) {
                 throw new IllegalStateException("Duplicate guard id: " + guard.id());
             }
         }
+        this.guards = List.copyOf(guards);
+        this.policySource = policySource;
+    }
+
+    /** Dla testów: stała konfiguracja guardów (jak dawniej z `control-layer.guards`). */
+    public GuardChain(List<Guard> guards, GuardProperties properties) {
+        this(guards, PolicySource.fixed(PolicyDocument.fromConfig(null, null, properties, null)));
+        var knownIds = guards.stream().map(Guard::id).toList();
         for (String configuredId : properties.rules().keySet()) {
             if (!knownIds.contains(configuredId)) {
                 throw new IllegalStateException(
                         "control-layer.guards.rules." + configuredId + " has no matching Guard bean");
             }
         }
-
-        for (Stage stage : Stage.values()) {
-            byStage.put(stage, new ArrayList<>());
-        }
-        if (properties.enabled()) {
-            for (Guard guard : guards) {
-                var rule = properties.rules().get(guard.id());
-                if (rule == null || !rule.enabled()) {
-                    continue;
-                }
-                var entry = new Entry(guard, new GuardSettings(true, rule.params()), rule.order());
-                guard.stages().forEach(stage -> byStage.get(stage).add(entry));
-            }
-        }
-        byStage.values().forEach(entries -> entries.sort(
-                Comparator.comparingInt(Entry::order).thenComparing(entry -> entry.guard().id())));
-        byStage.forEach((stage, entries) -> log.info(
-                "guards stage={} active={}", stage, entries.stream().map(e -> e.guard().id()).toList()));
     }
 
     public GuardChainResult run(Stage stage, GuardContext context) {
+        return run(policySource.current(), stage, context);
+    }
+
+    /** Uruchamia łańcuch według podanej wersji polityki (snapshot wzięty na początku żądania). */
+    public GuardChainResult run(ActivePolicy policy, Stage stage, GuardContext context) {
         var trace = new ArrayList<ControlTrace>();
         var current = context;
         var action = Action.ALLOW;
 
-        for (Entry entry : byStage.get(stage)) {
+        for (Entry entry : chainFor(policy).get(stage)) {
             String id = entry.guard().id();
             long startedAt = System.nanoTime();
             Verdict verdict;
@@ -91,6 +98,36 @@ public class GuardChain {
             }
         }
         return new GuardChainResult(action, current.text(), null, trace);
+    }
+
+    private Map<Stage, List<Entry>> chainFor(ActivePolicy policy) {
+        Built cached = built;
+        if (cached != null && cached.version() == policy.version() && cached.hash().equals(policy.hash())) {
+            return cached.byStage();
+        }
+        Built fresh = build(policy);
+        built = fresh;
+        return fresh.byStage();
+    }
+
+    private Built build(ActivePolicy policy) {
+        Map<Stage, List<Entry>> byStage = new EnumMap<>(Stage.class);
+        for (Stage stage : Stage.values()) {
+            byStage.put(stage, new ArrayList<>());
+        }
+        for (Guard guard : guards) {
+            var rule = policy.document().guards().get(guard.id());
+            if (rule == null || !rule.enabled()) {
+                continue;
+            }
+            var entry = new Entry(guard, new GuardSettings(true, rule.params()), rule.order());
+            guard.stages().forEach(stage -> byStage.get(stage).add(entry));
+        }
+        byStage.values().forEach(entries -> entries.sort(
+                Comparator.comparingInt(Entry::order).thenComparing(entry -> entry.guard().id())));
+        byStage.forEach((stage, entries) -> log.info("guards policyVersion={} stage={} active={}",
+                policy.version(), stage, entries.stream().map(e -> e.guard().id()).toList()));
+        return new Built(policy.version(), policy.hash(), byStage);
     }
 
     private static ControlTrace trace(String kind, String id, Action action, long latencyMs, String detail) {

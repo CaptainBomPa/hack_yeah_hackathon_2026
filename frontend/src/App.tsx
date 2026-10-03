@@ -12,7 +12,7 @@ export default function App() {
   const { state } = useAuth()
 
   if (state.status === 'loading') {
-    return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">Ładowanie…</div>
+    return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">Loading…</div>
   }
   // Bez sesji każda ścieżka pokazuje logowanie; po zalogowaniu zostajemy na tej samej ścieżce.
   if (state.status === 'anonymous') return <LoginPage expired={state.expired} />

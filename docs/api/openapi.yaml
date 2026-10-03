@@ -7,7 +7,7 @@ info:
 
     **Zaimplementowane:** `POST /v1/chat/completions` (+ nagłówek `X-Session-Id`, zapisywany w audycie),
     `GET /actuator/health`, audyt `/api/audit/**` (lista, rekord, eksport CSV/JSON, weryfikacja łańcucha).
-    `/api/auth/login|me|logout` (sesja przeglądarki, ciasteczko SESSION; HTTP Basic dalej działa dla maszyn).
+    `/api/dashboard`, `/api/auth/login|me|logout` (sesja przeglądarki, ciasteczko SESSION; HTTP Basic dalej działa dla maszyn).
     **Jeszcze nie:** reszta `/api/**` (dashboard, polityki, modele).
 
     **Uwierzytelnianie:** HTTP Basic na kontach lokalnych z rolami (docs/auth/). Konta demo są w
@@ -108,6 +108,20 @@ paths:
                   status:
                     type: string
                     example: UP
+  /api/dashboard:
+    get:
+      summary: Metryki dashboardu liczone z audytu (rola ADMIN)
+      description: |
+        Jedna odpowiedź ze wszystkim dla ekranu Dashboard: liczniki akcji, błędy 5xx, latencja p50/p95
+        żądań, które doszły do modelu, tokeny, oś czasu (słupki), top kontroli z trace (także redakcje),
+        statystyki per model i per użytkownik oraz dzisiejsze budżety ról (budget_counter + policy.yaml).
+        Agregacja w Javie z maks. 50 000 rekordów okna; powyżej `truncated: true`.
+      operationId: dashboard
+      parameters:
+        - { name: window, in: query, schema: { type: string, enum: ['1h', '24h', '7d'], default: '1h' }, description: 'Słupki: 5 min / 1 h / 6 h.' }
+      responses:
+        '200': { description: DashboardView.java (typ DashboardData we frontendzie). }
+        '403': { description: Rola inna niż ADMIN. }
   /api/audit/events:
     get:
       summary: Lista rekordów audytu (najnowsze pierwsze)

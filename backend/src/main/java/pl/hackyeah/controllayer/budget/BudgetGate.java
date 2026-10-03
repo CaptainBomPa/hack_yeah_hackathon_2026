@@ -1,11 +1,15 @@
 package pl.hackyeah.controllayer.budget;
 
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import pl.hackyeah.controllayer.chat.BudgetUsage;
 import pl.hackyeah.controllayer.chat.ChatMessage;
 import pl.hackyeah.controllayer.chat.ControlTrace;
+import pl.hackyeah.controllayer.policy.ActivePolicy;
+import pl.hackyeah.controllayer.policy.PolicyDocument;
 import pl.hackyeah.controllayer.policy.PolicyProperties;
+import pl.hackyeah.controllayer.policy.PolicySource;
 import reactor.core.publisher.Mono;
 
 /**
@@ -22,24 +26,35 @@ public class BudgetGate {
     static final String DAILY_CAP_POLICY = "budget.daily_cap";
     static final String SOFT_CAP_POLICY = "budget.soft_cap";
 
-    private final PolicyProperties policy;
-    private final BudgetLimitsProperties limits;
+    private final PolicySource policySource;
     private final BudgetService budgetService;
 
-    public BudgetGate(PolicyProperties policy, BudgetLimitsProperties limits, BudgetService budgetService) {
-        this.policy = policy;
-        this.limits = limits;
+    @Autowired
+    public BudgetGate(PolicySource policySource, BudgetService budgetService) {
+        this.policySource = policySource;
         this.budgetService = budgetService;
     }
 
+    /** Dla testów: stała polityka (role z `policy.yaml`, limity z application.yml). */
+    public BudgetGate(PolicyProperties policy, BudgetLimitsProperties limits, BudgetService budgetService) {
+        this(PolicySource.fixed(PolicyDocument.fromConfig(policy, null, null, limits)), budgetService);
+    }
+
     public Mono<BudgetCheck> check(String role, List<ChatMessage> messages) {
+        return check(policySource.current(), role, messages);
+    }
+
+    /** Limity wejścia/wyjścia i dzienny cap roli według podanej wersji polityki (snapshot żądania). */
+    public Mono<BudgetCheck> check(ActivePolicy policy, String role, List<ChatMessage> messages) {
+        var limits = policy.document().limits();
         long inputEstimate = TokenEstimator.estimateMessages(messages);
         if (inputEstimate > limits.maxInputTokens()) {
             return Mono.just(BudgetCheck.inputTooLarge(inputEstimate, limits.maxInputTokens()));
         }
 
         int maxOutputTokens = limits.maxOutputTokens();
-        Long dailyLimit = dailyLimitOf(role);
+        var rolePolicy = policy.document().roles().get(role);
+        Long dailyLimit = rolePolicy == null ? null : rolePolicy.dailyTokens();
         long reserve = inputEstimate + maxOutputTokens;
 
         return budgetService.reserve(role, dailyLimit, reserve).map(reservation -> {
@@ -59,12 +74,10 @@ public class BudgetGate {
         if (!check.allowed() || check.reservedTokens() == 0) {
             return Mono.just(0L);
         }
-        return budgetService.reconcile(role, dailyLimitOf(role), check.reservedTokens(), actualTokens);
-    }
-
-    private Long dailyLimitOf(String role) {
-        var rolePolicy = policy.roles().get(role);
-        return rolePolicy == null || rolePolicy.budget() == null ? null : rolePolicy.budget().dailyTokens();
+        // Limit z chwili rezerwacji (w `check`), nie z aktualnej polityki — zmiana polityki w trakcie
+        // żądania nie może rozliczyć tokenów w innym liczniku niż ten, w którym je zarezerwowano.
+        return budgetService.reconcile(role, check.dailyLimit() > 0 ? check.dailyLimit() : null,
+                check.reservedTokens(), actualTokens);
     }
 
     /** Wynik kontroli budżetowej — albo odmowa (z gotowym `blockedBy`/`detail`), albo zgoda z parametrami do rezerwacji/clampu. */

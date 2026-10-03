@@ -55,13 +55,16 @@ public class NipGuard implements Guard {
 }
 ```
 
-Działający przykład: `guard/pii/PeselGuard.java` (PII-001: regex 11 cyfr + checksum + data urodzenia).
+Działające przykłady: `guard/pii/PiiRecognizerGuard.java` (PII-RECOGNIZERS) i `guard/secrets/SecretGuard.java`.
+
+**Nowy typ PII to zwykle nie nowa klasa**, tylko wpis w `rules/pii/recognizers.yaml` (format Presidio)
+i ewentualnie walidator w `Validators`. Zob. [pii-recognizers.md](pii-recognizers.md).
 
 ## 4. `Verdict` – kiedy co
 
 | Verdict | Kiedy | Uwagi |
 |---|---|---|
-| `Allow` | brak trafień albo trafienie poniżej progu | `Verdict.allow()` |
+| `Allow(detail)` | brak trafień, trafienie poniżej progu albo trafienie w trybie `monitor` | `Verdict.allow()`; `detail` (opcjonalny) trafia do `trace` |
 | `Redact(newText, detail)` | wartość do zamaskowania, reszta treści bezpieczna | placeholder `[REDACTED:<id>]`; nie zmieniaj struktury (JSON: tylko wartość) |
 | `Block(reason)` | twarde naruszenie (bulk PII, klucz prywatny, SSRF…) | `reason` trafia do `trace`; nie podawaj wzorca ani progu reguły |
 

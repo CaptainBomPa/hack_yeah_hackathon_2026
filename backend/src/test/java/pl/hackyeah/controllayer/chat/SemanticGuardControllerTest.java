@@ -40,6 +40,8 @@ import pl.hackyeah.controllayer.guard.semantic.SidecarProperties;
 import pl.hackyeah.controllayer.model.ModelCatalog;
 import pl.hackyeah.controllayer.model.ModelCatalogProperties;
 import pl.hackyeah.controllayer.policy.ModelAccessPolicy;
+import pl.hackyeah.controllayer.policy.PolicyDocument;
+import pl.hackyeah.controllayer.policy.PolicySource;
 import pl.hackyeah.controllayer.policy.PolicyProperties;
 
 /**
@@ -56,6 +58,7 @@ class SemanticGuardControllerTest {
     private final AtomicBoolean sidecarDown = new AtomicBoolean(false);
     private final List<AuditEntry> audited = new ArrayList<>();
     private ModelCatalog catalog;
+    private ModelCatalogProperties catalogProperties;
     private PolicyProperties policyProperties;
     private ModelAccessPolicy policy;
     private String sidecarUrl;
@@ -82,10 +85,11 @@ class SemanticGuardControllerTest {
         sidecar.start();
         sidecarUrl = "http://localhost:" + sidecar.getAddress().getPort();
 
-        catalog = new ModelCatalog(new ModelCatalogProperties(
+        catalogProperties = new ModelCatalogProperties(
                 List.of(new ModelCatalogProperties.ModelEntry(
                         "test-model", "http://localhost:" + model.getAddress().getPort(), true)),
-                Duration.ofSeconds(5)));
+                Duration.ofSeconds(5));
+        catalog = new ModelCatalog(catalogProperties);
         policyProperties = new PolicyProperties(Map.of(
                 "chat", new PolicyProperties.RolePolicy(List.of("test-model"), null)));
         policy = new ModelAccessPolicy(policyProperties);
@@ -108,14 +112,17 @@ class SemanticGuardControllerTest {
 
     private WebTestClient client(String failureMode, String url) {
         var semantic = new SemanticGuard(new SidecarClient(WebClient.builder(), new SidecarProperties(url)));
-        var chain = new GuardChain(List.of(semantic), new GuardProperties(true, Map.of(
+        var guardProperties = new GuardProperties(true, Map.of(
                 "SEM-001", new GuardProperties.Rule(true, 200,
-                        Map.of("blockThreshold", 0.998, "timeoutMs", 1500, "failureMode", failureMode)))));
+                        Map.of("blockThreshold", 0.998, "timeoutMs", 1500, "failureMode", failureMode))));
+        var chain = new GuardChain(List.of(semantic), guardProperties);
         AuditLog auditLog = audited::add;
         var budgetGate = new BudgetGate(
                 policyProperties, new BudgetLimitsProperties(null, null), new BudgetService(null));
         var controller = new ChatCompletionController(catalog, policy, budgetGate,
-                new OllamaChatClient(WebClient.builder()), chain, auditLog, new AuditProperties(null, true, null));
+                new OllamaChatClient(WebClient.builder()), chain, auditLog, new AuditProperties(null, true, null),
+                PolicySource.fixed(PolicyDocument.fromConfig(policyProperties, catalogProperties, guardProperties,
+                        new BudgetLimitsProperties(null, null))));
         var authentication = new UsernamePasswordAuthenticationToken("tester", "n/a",
                 List.of(new SimpleGrantedAuthority("ROLE_CHAT")));
         WebFilter authenticated = (exchange, next) -> next.filter(exchange)

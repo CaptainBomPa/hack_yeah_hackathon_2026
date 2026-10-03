@@ -11,7 +11,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
-import pl.hackyeah.controllayer.policy.PolicyProperties;
+import pl.hackyeah.controllayer.policy.PolicySource;
 
 /**
  * Tworzy konto i kończy działanie. Uruchamiane przez scripts/add-user.sh z parametrami
@@ -30,12 +30,12 @@ class AddUserCommand implements ApplicationRunner {
 
     private final AppUserRepository users;
     private final PasswordEncoder passwordEncoder;
-    private final PolicyProperties policy;
+    private final PolicySource policy;
     private final ConfigurableApplicationContext context;
     private final String login;
     private final String role;
 
-    AddUserCommand(AppUserRepository users, PasswordEncoder passwordEncoder, PolicyProperties policy,
+    AddUserCommand(AppUserRepository users, PasswordEncoder passwordEncoder, PolicySource policy,
             ConfigurableApplicationContext context,
             @Value("${control-layer.cli.add-user}") String login,
             @Value("${control-layer.cli.role:}") String role) {
@@ -49,8 +49,9 @@ class AddUserCommand implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (!policy.roles().containsKey(role)) {
-            throw new IllegalArgumentException("rola '" + role + "' nie istnieje w policy.roles: " + policy.roles().keySet());
+        var roles = policy.current().document().roles();
+        if (!roles.containsKey(role)) {
+            throw new IllegalArgumentException("rola '" + role + "' nie istnieje w aktywnej polityce: " + roles.keySet());
         }
         String password = System.getenv(PASSWORD_ENV);
         if (password == null || password.length() < MIN_PASSWORD_LENGTH) {

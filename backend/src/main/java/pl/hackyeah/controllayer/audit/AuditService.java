@@ -105,7 +105,7 @@ public class AuditService implements AuditLog {
                 AuditSanitizer.sanitize(e.principal(), 100),
                 e.role(), AuditSanitizer.sanitize(e.sessionId(), 100), AuditSanitizer.sanitize(e.model(), 200),
                 e.action(), AuditSanitizer.sanitize(e.blockedBy(), 100), e.httpStatus(), e.latencyMs(),
-                e.promptTokens(), e.completionTokens(), e.messageCount(), trace);
+                e.promptTokens(), e.completionTokens(), e.messageCount(), trace, e.policyVersion());
     }
 
     /** Kanoniczna postać rekordu: stała kolejność pól, JSON bez spacji. */
@@ -126,6 +126,10 @@ public class AuditService implements AuditLog {
         canonical.put("completionTokens", e.completionTokens());
         canonical.put("messageCount", e.messageCount());
         canonical.put("controls", controls);
+        // Tylko gdy ustawione — rekordy sprzed kolumny policy_version zachowują swój hash.
+        if (e.policyVersion() != null) {
+            canonical.put("policyVersion", e.policyVersion());
+        }
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(chainKey);

@@ -6,7 +6,7 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
-import pl.hackyeah.controllayer.policy.PolicyProperties;
+import pl.hackyeah.controllayer.policy.PolicySource;
 
 /**
  * Zakłada konta z `config/users.yaml` przy starcie, jeśli ich jeszcze nie ma. Idempotentne:
@@ -21,10 +21,10 @@ class SeedUsers implements ApplicationRunner {
     private final SeedUsersProperties seed;
     private final AppUserRepository users;
     private final PasswordEncoder passwordEncoder;
-    private final PolicyProperties policy;
+    private final PolicySource policy;
 
     SeedUsers(SeedUsersProperties seed, AppUserRepository users, PasswordEncoder passwordEncoder,
-            PolicyProperties policy) {
+            PolicySource policy) {
         this.seed = seed;
         this.users = users;
         this.passwordEncoder = passwordEncoder;
@@ -37,7 +37,7 @@ class SeedUsers implements ApplicationRunner {
             return;
         }
         for (SeedUsersProperties.SeedUser user : seed.users()) {
-            if (!policy.roles().containsKey(user.role())) {
+            if (!policy.current().document().roles().containsKey(user.role())) {
                 throw new IllegalStateException("konto startowe '" + user.login() + "': rola '" + user.role()
                         + "' nie istnieje w policy.roles");
             }

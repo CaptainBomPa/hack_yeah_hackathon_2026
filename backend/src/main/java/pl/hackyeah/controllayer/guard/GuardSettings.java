@@ -2,7 +2,11 @@ package pl.hackyeah.controllayer.guard;
 
 import java.util.Map;
 
-/** Ustawienia guarda z `control-layer.guards.rules.<ID>` w YAML. */
+/**
+ * Ustawienia guarda z aktywnej polityki (`guards.<ID>` w {@code PolicyDocument}). Liczby przyjmowane
+ * są też jako napisy ("0.998") — Spring wiąże wartości z YAML do {@code Map<String, Object>} jako tekst,
+ * a bez tego parametr byłby po cichu zastępowany wartością domyślną.
+ */
 public record GuardSettings(boolean enabled, Map<String, Object> params) {
 
     public GuardSettings {
@@ -10,7 +14,11 @@ public record GuardSettings(boolean enabled, Map<String, Object> params) {
     }
 
     public double doubleParam(String name, double defaultValue) {
-        return params.get(name) instanceof Number number ? number.doubleValue() : defaultValue;
+        return switch (params.get(name)) {
+            case Number number -> number.doubleValue();
+            case String text -> parseOr(text, defaultValue);
+            case null, default -> defaultValue;
+        };
     }
 
     public String stringParam(String name, String defaultValue) {
@@ -18,6 +26,18 @@ public record GuardSettings(boolean enabled, Map<String, Object> params) {
     }
 
     public int intParam(String name, int defaultValue) {
-        return params.get(name) instanceof Number number ? number.intValue() : defaultValue;
+        return switch (params.get(name)) {
+            case Number number -> number.intValue();
+            case String text -> (int) parseOr(text, defaultValue);
+            case null, default -> defaultValue;
+        };
+    }
+
+    private static double parseOr(String text, double defaultValue) {
+        try {
+            return Double.parseDouble(text.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
 }

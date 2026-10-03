@@ -56,7 +56,7 @@ function load(key: string): Persisted {
     const saved = { ...fresh, ...(JSON.parse(raw) as Partial<Persisted>) }
     // Żądanie w toku przy odświeżeniu przepadło — oznaczamy je zamiast wiecznego "czekam".
     saved.turns = saved.turns.map((t) =>
-      t.response || t.error || t.cancelled ? t : { ...t, error: 'Przerwane przez odświeżenie strony.' },
+      t.response || t.error || t.cancelled ? t : { ...t, error: 'Interrupted by a page reload.' },
     )
     return saved
   } catch {
@@ -120,8 +120,8 @@ export function PlaygroundProvider({ owner, children }: { owner: string; childre
         update({ response, latencyMs: Date.now() - started })
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') update({ cancelled: true })
-        else if (err instanceof AuthRequiredError) update({ error: 'Sesja wygasła albo brak logowania (401). Zaloguj się ponownie.' })
-        else if (err instanceof GatewayUnavailableError) update({ error: `${err.message}. Czy backend działa na :8000?` })
+        else if (err instanceof AuthRequiredError) update({ error: 'Session expired or not signed in (401). Please sign in again.' })
+        else if (err instanceof GatewayUnavailableError) update({ error: `${err.message}. Is the backend running on :8000?` })
         else update({ error: String(err) })
       } finally {
         abortRef.current = null
