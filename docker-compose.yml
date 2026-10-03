@@ -21,10 +21,13 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://hackyeah:hackyeah@db:5432/hackyeah
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: qwen2.5:1.5b-instruct-q4_K_M
     ports:
       - "8000:8000"
     depends_on:
       - db
+      - ollama
 
   frontend:
     build:
@@ -35,5 +38,30 @@ services:
     depends_on:
       - backend
 
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  ollama-init:
+    image: ollama/ollama:latest
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: ollama:11434
+    entrypoint: ["/bin/sh", "-c", "ollama pull qwen2.5:1.5b-instruct-q4_K_M"]
+
 volumes:
   db_data:
+  ollama_data:

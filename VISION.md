@@ -50,7 +50,7 @@ z modelem i nie ryzykować, że demo się zatnie.
 |---|---|---|
 | Gateway/backend | Java 21 + Spring Boot 3, **Spring Cloud Gateway** (reactive/WebFlux) | Kontrole implementujemy jako własne `GatewayFilterFactory`; routing+config YAML dają nam "policy engine" niemal za darmo |
 | Semantyka AI | Python + FastAPI, sidecar wołany przez gateway po HTTP (localhost) | Modele HF/ONNX — ekosystem Pythona jest tu dużo bogatszy niż JVM |
-| Model chroniony | Ollama na Raspberry Pi, mały model (0.5B–3B) | Offline, bez kluczy, bez kosztów |
+| Model chroniony | Ollama na Raspberry Pi | Domyślnie `qwen2.5:1.5b-instruct-q4_K_M` (~10-15 tok/s na Pi5 8GB CPU-only — balans szybkość/jakość); `qwen2.5:0.5b` lub `gemma3:1b` jako szybsza alternatywa w allowlist modeli. Offline, bez kluczy, bez kosztów. Postawione w `docker-compose.yml` (`ollama` + `ollama-init`) |
 | Baza danych | PostgreSQL | Polityki, audit log, liczniki budżetu. `pgvector` opcjonalnie pod embedding similarity |
 | Cache/rate-limit (opcja, jeśli starczy czasu) | Redis | Tylko jeśli Postgres okaże się za wolny pod liczniki — nie blokować się na tym |
 | Frontend | React + TypeScript + Tailwind | Dwa widoki w jednej SPA: demo-chat uderzający w gateway + dashboard bezpieczeństwa |
