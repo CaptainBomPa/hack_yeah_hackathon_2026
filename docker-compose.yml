@@ -1,6 +1,8 @@
-# docker-compose dla hackathonu.
-# db + backend działają (backend w profilu prod). Frontend nie ma jeszcze Dockerfile'a,
-# sidecar semantyczny jeszcze nie istnieje. Ollama działa osobno na Raspberry Pi.
+# docker-compose dla hackathonu — docelowo wdrażany w całości na Raspberry Pi (backend razem
+# z Ollamą w jednej sieci docker, VISION.md §2). db + backend + ollama działają (backend
+# w profilu prod). Frontend nie ma jeszcze Dockerfile'a, sidecar semantyczny jeszcze nie istnieje.
+# Katalog dozwolonych modeli (allowlista) żyje w backend/src/main/resources/application.yml
+# (`control-layer.models`) — modele pulluje `ollama-init` poniżej; muszą się zgadzać.
 
 services:
   db:
@@ -30,7 +32,6 @@ services:
       SPRING_DATASOURCE_USERNAME: hackyeah
       SPRING_DATASOURCE_PASSWORD: hackyeah
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
-      OLLAMA_MODEL: qwen2.5:1.5b-instruct-q4_K_M
     ports:
       - "8000:8000"
     depends_on:
@@ -70,7 +71,8 @@ services:
         condition: service_healthy
     environment:
       OLLAMA_HOST: ollama:11434
-    entrypoint: ["/bin/sh", "-c", "ollama pull qwen2.5:1.5b-instruct-q4_K_M"]
+    # Musi pullować dokładnie te tagi, które są w allowliście (control-layer.models).
+    entrypoint: ["/bin/sh", "-c", "ollama pull qwen2.5:1.5b-instruct-q4_K_M && ollama pull qwen2.5:0.5b"]
 
 volumes:
   db_data:

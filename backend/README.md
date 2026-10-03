@@ -18,14 +18,16 @@ Stack: Java 25, Spring Boot 4.1, Spring Cloud 2025.1 (gateway webflux), Gradle 9
 
 ## Uruchomienie
 
-W IntelliJ (configi współdzielone z `.run/`, pojawią się same po otwarciu repo i podpięciu
-`backend/` jako projektu Gradle):
+Otwórz **root repo** (nie ten katalog) w IntelliJ — `settings.gradle` w roocie jest composite
+buildem, który dociąga `backend/` automatycznie (szczegóły: [`../README.md`](../README.md)).
+
+W IntelliJ (configi współdzielone z `.run/`, pojawią się same po otwarciu roota):
 
 - **Backend (local)** — `bootRun` na H2.
 - **Backend (prod, postgres)** — najpierw stawia `Postgres (docker)`, potem `bootRun` z profilem `prod`.
 - **Backend tests** — `gradle test`.
 
-Z terminala:
+Z terminala (z tego katalogu `backend/`; z roota repo analogicznie przez `./gradlew :backend:<task>`):
 
 ```bash
 ./gradlew bootRun                                   # profil local
@@ -35,4 +37,11 @@ docker compose up -d --build db backend             # całość w kontenerach (p
 ```
 
 Gateway słucha na `http://localhost:8000`, health: `/actuator/health`.
-`/llm/**` to passthrough do Ollamy (`OLLAMA_BASE_URL`, domyślnie `http://raspberrypi.local:11434`).
+
+`POST /v1/chat/completions` woła skonfigurowany model (`{model, messages}` na wejściu,
+`GuardedChatResponse` na wyjściu — kontrakt w `frontend/src/api/types.ts`). Dziś jedyną realną
+kontrolą w `trace` jest allowlista modeli (`control-layer.models` w `application.yml`); reszta
+decision pipeline z `VISION.md` §9 jeszcze nie istnieje. Model trzeba najpierw dopisać do tej
+listy, inaczej dostaniesz `403 model.allowlist`. Adres providera: `OLLAMA_BASE_URL`
+(domyślnie `http://localhost:11434` — nadpisywane w `docker-compose.yml` na `http://ollama:11434`
+dla wdrożenia na Raspberry Pi).

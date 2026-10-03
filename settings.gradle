@@ -1,0 +1,11 @@
+// Root tylko po to, żeby IntelliJ (i `./gradlew` z poziomu repo) widziały `backend/` jako
+// projekt Gradle od razu po otwarciu CAŁEGO katalogu repo — bez ręcznego "Link Gradle Project".
+// To composite build (includeBuild), nie multi-moduł: backend/ zachowuje własny
+// settings.gradle/build.gradle i buduje się dokładnie tak samo samodzielnie (Dockerfile,
+// docker-compose.yml i CI mogą dalej wołać `backend/gradlew` bezpośrednio — nic się tam nie
+// zmienia).
+//
+// frontend/ to projekt Node/Vite (npm), nie Gradle — celowo nie wchodzi tutaj.
+rootProject.name = 'hack-yeah-hackathon-2026'
+
+includeBuild('backend')

@@ -70,7 +70,7 @@ Operacje bazodanowe nie mogą wykonywać się na event loopie WebFlux: należy i
 | Semantyka | Wymienny provider za interfejsem Javy: zewnętrzne API lub opcjonalny lokalny sidecar Python/FastAPI + Hugging Face/ONNX |
 | Chroniony model | Ollama na Raspberry Pi; bazowy model `qwen2.5:1.5b-instruct-q4_K_M` |
 | Frontend | React 18, TypeScript, Vite, Tailwind, Recharts |
-| Uruchomienie | Docker Compose dla środowiska dev; `OLLAMA_BASE_URL` wybiera Ollamę lokalną lub na Raspberry Pi |
+| Uruchomienie | Docker Compose; docelowo backend + Ollama razem na Raspberry Pi (jedna sieć docker, §10); `OLLAMA_BASE_URL` nadpisuje adres dla lokalnego dev |
 
 Kandydaci na biblioteki i sposób ich oceny są opisani wyłącznie w
 [`docs/tooling.md`](docs/tooling.md).
@@ -146,10 +146,19 @@ hashy i bezpiecznych fragmentów. Eksport CSV/JSON musi zachowywać te same zasa
 
 ## 7. API i routing
 
-Docelowym wejściem dla playgroundu jest zgodny z OpenAI endpoint
-`POST /v1/chat/completions`, wzbogacony o identyfikator żądania i trace kontroli. API
-dashboardu korzysta z `/api/**`. Obecny backend udostępnia wyłącznie tymczasowy passthrough
-`/llm/**`; nie jest on jeszcze chronionym API MVP.
+Wejściem dla playgroundu jest zgodny z OpenAI endpoint `POST /v1/chat/completions`, wzbogacony
+o identyfikator żądania i trace kontroli. API dashboardu korzysta z `/api/**`.
+
+`/v1/chat/completions` **działa** (zastąpił tymczasowy passthrough `/llm/**`): waliduje `model`
+wobec allowlisty (`control-layer.models` w `backend/src/main/resources/application.yml` —
+dokładny tag providera, bez warstwy aliasów), woła go po jego natywnym OpenAI-compatible
+endponcie (Ollama wystawia go wprost) z timeoutem fail-closed, i mapuje odpowiedź do
+`GuardedChatResponse`. To tylko krok 4 pipeline'u („wywołanie modelu, jeśli dozwolone") plus
+pierwsza realna kontrola (allowlista modeli) — reszta `trace` zapełni się, gdy powstaną kroki
+1-4 z §9. Zaimplementowane jako zwykły kontroler WebFlux, nie deklaratywny route Spring Cloud
+Gateway — wybór providera zależy od treści body, a odpowiedź wymaga przekształcenia do własnego
+kontraktu, co w kontrolerze jest prostsze i mniej ryzykowne niż ręczne przepisywanie URI/body na
+poziomie filtrów Gateway. Inne route'y (np. do sidecara) mogą nadal być deklaratywne.
 
 Gateway działa na porcie `8000`, frontend na `3000`. Opcjonalny lokalny sidecar może działać
 na `8001`; zewnętrzny provider jest konfigurowany adresem i poświadczeniami środowiskowymi.
@@ -180,18 +189,23 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
 3. Dodać bezpieczny audyt, metryki, budżet i endpointy dashboardu.
 4. Zaimplementować interfejs providera semantycznego, wybrany adapter, timeouty i zachowanie
    degradacyjne; lokalny sidecar dodać, jeśli pozwoli czas.
-5. Zastąpić passthrough przez chronione `/v1/chat/completions` i podłączyć frontend.
+5. Zastąpić passthrough przez chronione `/v1/chat/completions` i podłączyć frontend. Backend:
+   zrobione poza kolejnością (routing do modelu + allowlista nie czekały na kroki 1-4, zob. §7);
+   podłączenie frontendu (dziś na mockach, `VITE_USE_MOCKS`) i reszta `trace` — wciąż do zrobienia.
 6. Dostarczyć Explainable Verdict, test runner i Red Team Arena.
 7. Dopiero potem rozważać wyróżniki A, C i D.
 
 ## 10. Stan repozytorium
 
-- `backend/` — działający szkielet Java 25/Spring Boot 4 z profilami H2/PostgreSQL,
-  Flyway, Dockerfilem i niechronionym passthrough `/llm/**`;
+- `backend/` — działający szkielet Java 25/Spring Boot 4 z profilami H2/PostgreSQL, Flyway,
+  Dockerfilem i **działającym** `POST /v1/chat/completions` (allowlista modeli + wywołanie
+  providera + `GuardedChatResponse`, zob. §7) — bez reszty decision pipeline;
 - `frontend/` — działający szkielet widoków i mocków, bez podłączonego docelowego API;
 - provider analizy semantycznej ani opcjonalny lokalny sidecar nie mają jeszcze implementacji;
-- `docker-compose.yml` — uruchamia bazę, backend, frontend i lokalną Ollamę; adres modelu można
-  nadpisać przez `OLLAMA_BASE_URL`, aby wskazać Raspberry Pi;
+- `docker-compose.yml` — docelowo wdrażany w całości na Raspberry Pi: baza, backend i Ollama
+  żyją w jednej sieci docker na tym samym hoście (backend łączy się z Ollamą przez nazwę
+  usługi `ollama`, nie przez LAN). `OLLAMA_BASE_URL` pozwala deweloperowi nadpisać to lokalnie
+  (np. `bootRun` na laptopie z własną Ollamą pod `localhost:11434`, czyli wartość domyślna);
 - decision pipeline, polityki, guardraile, audyt i data-driven test suite są jeszcze do
   zaimplementowania.
 

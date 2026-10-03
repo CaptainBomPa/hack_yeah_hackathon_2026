@@ -17,3 +17,21 @@ zakresu MVP i planu implementacji. Przeczytaj oba przed rozpoczęciem pracy.
 
 Aktualne instrukcje uruchomienia są w README poszczególnych komponentów. Stan implementacji
 i kolejność prac opisuje `VISION.md`.
+
+## IntelliJ / Gradle
+
+Otwórz **ten katalog** (root repo) w IntelliJ — `settings.gradle` w roocie to composite build
+(`includeBuild('backend')`), więc `backend/` zostanie od razu rozpoznany i zaimportowany jako
+projekt Gradle, bez ręcznego "Link Gradle Project" na `backend/build.gradle`. `backend/`
+zachowuje przy tym własny, w pełni samodzielny build (Dockerfile i `docker-compose.yml` dalej
+budują go niezależnie) — root nic w nim nie zmienia, tylko ułatwia pracę w IDE.
+
+Z terminala, z poziomu roota:
+
+```bash
+./gradlew :backend:bootRun   # profil local (H2)
+./gradlew :backend:test
+```
+
+`frontend/` to osobny projekt Node/Vite (`npm install && npm run dev` w `frontend/`) — nie
+wchodzi w ten composite build.

@@ -12,22 +12,21 @@ spring:
     default: local
   jpa:
     open-in-view: false
-  cloud:
-    gateway:
-      server:
-        webflux:
-          routes:
-            # Passthrough do Ollamy na Raspberry Pi — na razie bez filtrów kontrolnych (VISION.md §4).
-            - id: ollama
-              uri: ${control-layer.ollama.base-url}
-              predicates:
-                - Path=/llm/**
-              filters:
-                - StripPrefix=1
 
+# Katalog modeli = allowlista z VISION.md §4 ("allowlista modeli"). `tag` to dokładna nazwa,
+# jaką wysyła klient w polu `model` POST /v1/chat/completions — bez warstwy aliasów (ustalone
+# świadomie, zgodnie z tym, co już zakłada frontend). Model spoza tej listy albo z enabled:false
+# jest odrzucany identycznie jak nieznany. Docelowo może przenieść się do policy.yaml razem
+# z resztą polityk (VISION.md §9, krok 1) — dziś żyje tu, żeby nie czekać na ten format.
 control-layer:
-  ollama:
-    base-url: ${OLLAMA_BASE_URL:http://raspberrypi.local:11434}
+  model-timeout: 60s
+  models:
+    - tag: qwen2.5:1.5b-instruct-q4_K_M
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      enabled: true
+    - tag: qwen2.5:0.5b
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      enabled: true
   sidecar:
     # Sidecar semantyczny (Python/FastAPI) — jeszcze nie istnieje.
     base-url: ${SIDECAR_BASE_URL:http://localhost:8001}

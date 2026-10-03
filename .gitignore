@@ -1,3 +1,7 @@
+# Gradle (root composite build — patrz settings.gradle; backend/ ma własny .gitignore)
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
 # OS
 .DS_Store
 Thumbs.db
