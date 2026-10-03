@@ -9,7 +9,8 @@ Nadrzędnym materiałem źródłowym zadania jest
 Zasady pracy:
 
 - backend i decision pipeline rozwijamy przede wszystkim w Javie;
-- Python jest dopuszczony wyłącznie jako cienki, lokalny sidecar ML;
+- analiza semantyczna korzysta z wymiennego providera za interfejsem Javy; lokalny sidecar
+  Python/ML jest opcją, nie wymaganiem;
 - polityki i przypadki testowe są danymi, nie hardcodowanymi regułami aplikacji;
 - nie zapisujemy surowego PII ani sekretów w logach;
 - zmianę decyzji architektonicznej zapisujemy w `VISION.md` w tym samym commicie;

@@ -18,16 +18,19 @@ model działa w Ollamie na Raspberry Pi; sam model nie implementuje guardraili.
 
 MVP musi:
 
-- działać offline i bez płatnych usług;
-- łączyć szybkie kontrole deterministyczne w Javie z lokalną analizą semantyczną;
+- nie wiązać decision pipeline z jednym dostawcą analizy semantycznej;
+- łączyć szybkie kontrole deterministyczne w Javie z analizą semantyczną dostarczaną przez
+  wymienny provider;
 - pozwalać zmienić politykę bez przebudowy aplikacji;
 - prezentować decyzję, jej powody i latencję każdej kontroli;
 - zawierać uruchamialny jednym poleceniem zestaw testów pozytywnych i negatywnych;
 - demonstrować dwa główne wyróżniki: **B — Red Team Arena** i
   **E — Explainable Verdict / Security X-ray**.
 
-Integracja z pełnym protokołem MCP, rozbudowane role użytkowników, rozproszony deployment i
-zewnętrzne usługi guardrailowe nie są warunkiem MVP.
+Integracja z pełnym protokołem MCP, rozbudowane role użytkowników i rozproszony deployment nie
+są warunkiem MVP. Lokalna analiza promptów jest preferowana ze względu na prywatność,
+niezależność i koszt, ale jest **nice to have**, a nie ograniczeniem architektury. MVP może
+korzystać z zewnętrznego API, jeśli daje ono najlepszą jakość i przewidywalne demo.
 
 ## 2. Architektura
 
@@ -37,21 +40,22 @@ zewnętrzne usługi guardrailowe nie są warunkiem MVP.
                   v
 [Java / Spring Cloud Gateway: Control Layer]
   |  1. identyfikacja żądania i polityki
-  |  2. kontrole wejścia: reguły + lokalna semantyka
+  |  2. kontrole wejścia: reguły + semantyka
   |  3. decyzja i akcja
   |  4. wywołanie chronionego modelu, jeśli dozwolone
   |  5. kontrole odpowiedzi i redakcja
   |  6. audyt, metryki i Explainable Verdict
   |
-  +--> [Python/FastAPI semantic sidecar]
+  +--> [Semantic provider: zewnętrzne API lub lokalny sidecar]
   +--> [PostgreSQL: polityki, audyt, budżety]
   +--> [Ollama na Raspberry Pi: chroniony LLM]
 ```
 
-Java jest właścicielem orkiestracji, polityk i ostatecznej decyzji. Python jest uzasadnionym,
-cienkim adapterem wyłącznie do lokalnych modeli ML; jego awaria nie może omijać kontroli.
-Komunikacja z sidecarem ma stabilny kontrakt HTTP, dzięki czemu model można wymienić bez zmian
-w decision pipeline.
+Java jest właścicielem orkiestracji, polityk i ostatecznej decyzji. Javowy interfejs providera
+oddziela decision pipeline od konkretnego modelu lub usługi. Implementacja może wywoływać
+zewnętrzne API albo opcjonalny lokalny sidecar Python/FastAPI, gdy uzasadnia to ekosystem ML.
+Awaria providera nie może omijać kontroli, a jego wymiana nie może zmieniać kontraktu
+`ControlResult`.
 
 Spring Cloud Gateway jest reaktywny, natomiast obecna persistencja JPA/JDBC jest blokująca.
 Operacje bazodanowe nie mogą wykonywać się na event loopie WebFlux: należy izolować je na
@@ -63,7 +67,7 @@ Operacje bazodanowe nie mogą wykonywać się na event loopie WebFlux: należy i
 |---|---|
 | Backend/gateway | Java 25, Spring Boot 4.1.1, Spring Cloud 2025.1.3, WebFlux/Gateway, Gradle Groovy |
 | Persistencja | JPA/Hibernate + JDBC; H2 dla profilu `local`, PostgreSQL + Flyway dla `prod` |
-| Semantyka | Python + FastAPI + lokalny model Hugging Face/ONNX, tylko jako sidecar |
+| Semantyka | Wymienny provider za interfejsem Javy: zewnętrzne API lub opcjonalny lokalny sidecar Python/FastAPI + Hugging Face/ONNX |
 | Chroniony model | Ollama na Raspberry Pi; bazowy model `qwen2.5:1.5b-instruct-q4_K_M` |
 | Frontend | React 18, TypeScript, Vite, Tailwind, Recharts |
 | Uruchomienie | Docker Compose dla środowiska dev; `OLLAMA_BASE_URL` wybiera Ollamę lokalną lub na Raspberry Pi |
@@ -103,14 +107,17 @@ Nie wolno hardcodować progów i akcji w kontrolerach.
 - sygnatury prompt/code/command injection, niebezpiecznej deserializacji i SSRF;
 - timeout, circuit breaker i jawna strategia `fail-open`/`fail-closed` per kontrola.
 
-### Kontrole semantyczne — lokalny sidecar
+### Kontrole semantyczne — wymienny provider
 
 - klasyfikacja prompt injection i jailbreak;
 - klasyfikacja wycieku danych/system promptu na wyjściu;
-- podobieństwo do lokalnego korpusu znanych ataków;
-- opcjonalny lokalny LLM-as-judge tylko dla przypadków granicznych.
+- podobieństwo do korpusu znanych ataków;
+- opcjonalny LLM-as-judge tylko dla przypadków granicznych.
 
-Semantyka jest sygnałem w hybrydowym scoringu, nigdy pojedynczym punktem autoryzacji.
+Semantyka jest sygnałem w hybrydowym scoringu, nigdy pojedynczym punktem autoryzacji. Przy
+providerze zewnętrznym polityka określa, jakie dane wolno wysłać: sekrety i wykrywalne PII są
+redagowane przed wywołaniem, a audyt zapisuje nazwę providera, latencję i status bez utrwalania
+surowego promptu.
 
 ## 5. Wyróżniki produktu
 
@@ -144,7 +151,8 @@ Docelowym wejściem dla playgroundu jest zgodny z OpenAI endpoint
 dashboardu korzysta z `/api/**`. Obecny backend udostępnia wyłącznie tymczasowy passthrough
 `/llm/**`; nie jest on jeszcze chronionym API MVP.
 
-Gateway działa na porcie `8000`, frontend na `3000`, a planowany sidecar na `8001`.
+Gateway działa na porcie `8000`, frontend na `3000`. Opcjonalny lokalny sidecar może działać
+na `8001`; zewnętrzny provider jest konfigurowany adresem i poświadczeniami środowiskowymi.
 
 ## 8. Testy i kryteria akceptacji
 
@@ -158,7 +166,7 @@ Minimalny zestaw obejmuje:
 - PII/secrets i redakcję wejścia oraz wyjścia;
 - bezpośrednie i pośrednie prompt injection/jailbreak;
 - niedozwolone tool-calls, SSRF i command injection;
-- przekroczenie budżetu i timeout zależności;
+- przekroczenie budżetu, timeout providera i brak poświadczeń;
 - działanie wszystkich trybów kontroli oraz shadow nowej polityki;
 - porównanie ruchu chronionego i niechronionego w Red Team Arena.
 
@@ -170,7 +178,8 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
 1. Uzgodnić kontrakty `ControlRequest`, `ControlResult`, decyzję końcową i format polityki.
 2. Zbudować javowy decision pipeline z trybami oraz podstawowymi regułami PII/secrets.
 3. Dodać bezpieczny audyt, metryki, budżet i endpointy dashboardu.
-4. Podłączyć lokalny sidecar, timeouty i zachowanie degradacyjne.
+4. Zaimplementować interfejs providera semantycznego, wybrany adapter, timeouty i zachowanie
+   degradacyjne; lokalny sidecar dodać, jeśli pozwoli czas.
 5. Zastąpić passthrough przez chronione `/v1/chat/completions` i podłączyć frontend.
 6. Dostarczyć Explainable Verdict, test runner i Red Team Arena.
 7. Dopiero potem rozważać wyróżniki A, C i D.
@@ -180,7 +189,7 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
 - `backend/` — działający szkielet Java 25/Spring Boot 4 z profilami H2/PostgreSQL,
   Flyway, Dockerfilem i niechronionym passthrough `/llm/**`;
 - `frontend/` — działający szkielet widoków i mocków, bez podłączonego docelowego API;
-- lokalny sidecar semantyczny nie ma jeszcze implementacji;
+- provider analizy semantycznej ani opcjonalny lokalny sidecar nie mają jeszcze implementacji;
 - `docker-compose.yml` — uruchamia bazę, backend, frontend i lokalną Ollamę; adres modelu można
   nadpisać przez `OLLAMA_BASE_URL`, aby wskazać Raspberry Pi;
 - decision pipeline, polityki, guardraile, audyt i data-driven test suite są jeszcze do

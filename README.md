@@ -1,7 +1,7 @@
 # HackYeah Hackathon 2026 — AI Control Layer
 
-Lokalny gateway bezpieczeństwa przed LLM: guardraile deterministyczne i semantyczne,
-budżetowanie, audyt oraz dashboard.
+Gateway bezpieczeństwa przed LLM: guardraile deterministyczne i semantyczne, budżetowanie,
+audyt oraz dashboard.
 
 Najważniejszym materiałem źródłowym jest
 [`CRITERIA AI Control Layer.pdf`](project-spec/CRITERIA%20AI%20Control%20Layer.pdf), a
