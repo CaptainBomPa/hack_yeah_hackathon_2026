@@ -64,6 +64,7 @@ public class BddWorld {
     private FakeHttpService fakeModel;
     private FakeHttpService fakeSidecar;
     private boolean sidecarDown;
+    private String realSidecarUrl;
     private String defaultModelTag;
     private String currentLogin;
     private String currentRole;
@@ -139,6 +140,18 @@ public class BddWorld {
     public void sidecarIsUnavailable() {
         enableSemanticGuard();
         sidecarDown = true;
+    }
+
+    /**
+     * Points SEM-001 at a real, already-running semantic-sidecar process instead of the HTTP
+     * fake — the only place this suite calls the actual Horizon classifier. Timeout and threshold
+     * mirror the real deployment defaults (application.yml), since a cold-loaded model answering a
+     * short prompt is slower than the instant fake but still well under a second once warmed up.
+     */
+    public void useRealSemanticSidecar(String baseUrl) {
+        guardRules.put("SEM-001", new GuardProperties.Rule(true, 200,
+                Map.of("blockThreshold", 0.9, "timeoutMs", 4000, "failureMode", "closed")));
+        this.realSidecarUrl = baseUrl;
     }
 
     // ---- When: the action ----
@@ -307,7 +320,8 @@ public class BddWorld {
         List<Guard> guards = new ArrayList<>();
         guards.add(new PiiRecognizerGuard(guardProperties, new DefaultResourceLoader()));
         if (guardRules.containsKey("SEM-001")) {
-            String sidecarUrl = sidecarDown || fakeSidecar == null ? "http://localhost:1" : fakeSidecar.url();
+            String sidecarUrl = realSidecarUrl != null ? realSidecarUrl
+                    : sidecarDown || fakeSidecar == null ? "http://localhost:1" : fakeSidecar.url();
             guards.add(new SemanticGuard(new SidecarClient(WebClient.builder(), new SidecarProperties(sidecarUrl))));
         }
         var guardChain = new GuardChain(guards, guardProperties);

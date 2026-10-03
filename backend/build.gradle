@@ -20,6 +20,7 @@ repositories {
 ext {
 	set('springCloudVersion', '2025.1.3')
 	set('cucumberVersion', '7.20.1')
+	set('testcontainersVersion', '2.0.5')
 }
 
 dependencies {
@@ -50,6 +51,11 @@ dependencies {
 	testImplementation 'io.cucumber:cucumber-junit-platform-engine'
 	testImplementation 'io.cucumber:cucumber-picocontainer'
 	testImplementation 'io.qameta.allure:allure-cucumber7-jvm:2.29.1'
+
+	// Auto-starts/stops the real semantic-sidecar (Docker Compose) for semantic_sidecar_e2e.feature
+	// — only when enabled, see SemanticSidecarE2ESteps.java and the testWithSidecar task below.
+	testImplementation platform("org.testcontainers:testcontainers-bom:${testcontainersVersion}")
+	testImplementation 'org.testcontainers:testcontainers'
 }
 
 dependencyManagement {
@@ -71,4 +77,25 @@ tasks.named('test') {
 tasks.register('dbUp', Exec) {
 	workingDir = rootProject.projectDir.parentFile
 	commandLine 'docker', 'compose', 'up', '-d', '--wait', 'db'
+}
+
+// Cała suita, ale semantic_sidecar_e2e.feature sam stawia (Testcontainers) i gasi prawdziwego
+// semantic-sidecara z docker-compose.yml zamiast go pomijać — zob. SemanticSidecarE2ESteps.java.
+// Wymaga Dockera; pierwsze uruchomienie ściąga ~600MB modelu z Hugging Face.
+tasks.register('testWithSidecar', Test) {
+	group = 'verification'
+	description = 'Full suite with the real semantic-sidecar auto-started/stopped via Testcontainers (needs Docker).'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform()
+	systemProperty 'allure.results.directory', "${layout.buildDirectory.get().asFile}/allure-results"
+	systemProperty 'sidecarE2E', 'true'
+	systemProperty 'compose.file', rootProject.projectDir.parentFile.toPath().resolve('docker-compose.yml').toString()
+	// Without this, the sidecar's image build / model download (several minutes, first run) prints
+	// nothing at all to the console — indistinguishable from a hang. Testcontainers' own log
+	// consumer in SemanticSidecarE2ESteps prints straight to System.out specifically so this makes
+	// it visible instead of only landing in the (unread, until the task finishes) test report.
+	testLogging {
+		showStandardStreams = true
+	}
 }

@@ -94,14 +94,29 @@ reszta identyfikatorów w kodzie) — polskie są tylko komentarze/dokumentacja 
 z resztą repo.
 
 Pod spodem: prawdziwy `ChatCompletionController` z prawdziwym `GuardChain`/`BudgetGate`, a model
-i sidecar semantyczny to lekkie atrapy HTTP (`com.sun.net.httpserver.HttpServer`) sterowane
-krokami `Given` — żadnego Dockera, żadnej prawdziwej Ollamy. To samo podejście, co w
+i sidecar semantyczny to domyślnie lekkie atrapy HTTP (`com.sun.net.httpserver.HttpServer`)
+sterowane krokami `Given` — żadnego Dockera, żadnej prawdziwej Ollamy. To samo podejście, co w
 `ChatCompletionControllerTest`/`SemanticGuardControllerTest`, tylko opakowane w język scenariusza.
+
+**Wyjątek**: `semantic_sidecar_e2e.feature` woła prawdziwy proces `semantic-sidecar/` (prawdziwy
+klasyfikator Horizon), żeby sprawdzić, że model naprawdę łapie prompt injection, a nie tylko że
+Java poprawnie reaguje na wyskryptowany wynik.
+
+- `./gradlew test` (domyślne) — jeśli sidecar nie odpowiada na `localhost:8001`, te dwa scenariusze
+  są **pomijane** (skipped), nie failowane. Zero Dockera, zero zależności od internetu.
+- `./gradlew testWithSidecar` — **sam** stawia `semantic-sidecar-init`/`semantic-sidecar` z
+  `docker-compose.yml` przez Testcontainers, czeka aż sidecar będzie zdrowy, odpala całą suitę, a
+  na koniec sam gasi kontenery. Jedna komenda, wymaga działającego Dockera; pierwszy raz ściąga
+  model (~600 MB z Hugging Face), więc może potrwać kilka minut.
+- Inny adres sidecara (np. już gdzieś działający): `-Dsidecar.e2e.url=...` albo zmienna
+  środowiskowa `SIDECAR_E2E_URL` — wtedy `./gradlew test` (bez `testWithSidecar`) też go znajdzie
+  i scenariusze się odpalą zamiast pominąć.
 
 ### Jak odpalić
 
 ```bash
-./gradlew test                                               # wszystko, w tym BDD
+./gradlew test                                               # wszystko, w tym BDD (e2e sidecara pominięte bez Dockera)
+./gradlew testWithSidecar                                    # to samo, ale sam stawia i gasi prawdziwego sidecara
 ./gradlew test --tests "*.bdd.CucumberSuite"                 # tylko scenariusze BDD
 ./gradlew test -Dcucumber.filter.tags="@budget"               # tylko jedna kategoria (gdy dodacie tagi)
 ```
