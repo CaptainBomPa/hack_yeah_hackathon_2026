@@ -1,0 +1,29 @@
+# Konfiguracja sidecara semantycznego (dane, nie kod).
+# Nieznana nazwa w `detectors` przerywa start.
+
+limits:
+  max_input_chars: 20000
+
+# Normalizacja przed klasyfikacją. Każdy etap można wyłączyć. Limity chronią przed "bombami dekompresyjnymi".
+normalization:
+  enabled: true
+  max_decode_depth: 3
+  max_segments: 16
+  max_decoded_chars: 50000
+  decoders:
+    base64: true
+    hex: true
+    url: true
+    rot13: true
+    reversed: true
+    unicode_tags: true
+  deobfuscate:
+    leet: true
+    spaced: true
+    markup: true
+
+detectors:
+  obfuscation:
+    enabled: true
+    # params:
+    #   weights: {leet: 0.5}   # nadpisanie wag poszczególnych sygnałów
