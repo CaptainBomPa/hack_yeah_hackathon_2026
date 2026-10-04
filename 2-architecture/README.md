@@ -37,9 +37,11 @@ other client speaking the gateway's API) — goes through the same pipeline, top
      aspirational — the sidecar is a provider behind one contract, swappable for a different
      model or a hosted API without touching the Java decision logic (`VISION.md` §2).
    - The protected model itself (Ollama, or ChatGPT via Codex) is called only if the chain
-     allows the input; its response then runs back through the **same** Guard Chain (output
-     stage) before anything reaches the client — this is how a model "helpfully" repeating a
-     PESEL or pasting a secret back gets caught and redacted too.
+     allows the input. **The chain then runs a second time, on the model's response, before
+     anything reaches the client** — the deterministic guards (SIG-FEED, Secrets, PII) all check
+     both directions of traffic, so a model that "helpfully" repeats a PESEL or pastes back a
+     secret from its context gets caught and redacted on the way out too, not just blocked on the
+     way in. `SEM-001` is the one exception: the sidecar currently only scores the prompt.
 6. **Verdict Assembler** — combines the guard trace, budget/rate-limit outcome and the (possibly
    redacted) model response into the final decision (`allow`/`redact`/`block`) returned to the
    client, with the full per-check path attached for the UI's Explainable Verdict / X-ray view.
