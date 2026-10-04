@@ -164,32 +164,31 @@
     "calls": 1
   },
   {
-    "name": "output redaction blocks buffered SSE",
+    "name": "output redaction in SSE returns a redacted stream instead of blocking",
     "request": {
       "model": "test-model",
       "input": "hello",
       "stream": true
     },
     "output": "PRIVATE-VALUE",
-    "status": 400,
+    "status": 200,
     "calls": 1,
-    "code": "policy.output-blocked",
-    "stage": "output",
-    "guard": "TEST-GUARD"
+    "redacted": true,
+    "clientContains": [
+      "[REDACTED]"
+    ]
   },
   {
-    "name": "split secret in provisional SSE is blocked",
+    "name": "split secret in provisional SSE never reaches the client",
     "request": {
       "model": "test-model",
       "input": "hello",
       "stream": true
     },
     "splitSecret": true,
-    "status": 400,
+    "status": 200,
     "calls": 1,
-    "code": "policy.output-blocked",
-    "stage": "output",
-    "guard": "TEST-GUARD"
+    "redacted": true
   },
   {
     "name": "truncated SSE denied",
@@ -348,11 +347,9 @@
       "stream": true
     },
     "addedSecret": true,
-    "status": 400,
+    "status": 200,
     "calls": 1,
-    "code": "policy.output-blocked",
-    "stage": "output",
-    "guard": "TEST-GUARD"
+    "redacted": true
   },
   {
     "name": "native additional tools are retained",
@@ -759,5 +756,64 @@
     "upstreamNotContains": [
       "BLOCK-ME"
     ]
+  },
+  {
+    "name": "client-executed tool_search from Codex 0.159 is accepted",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "tools": [
+        {
+          "type": "function",
+          "name": "shell",
+          "parameters": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "type": "tool_search",
+          "execution": "client",
+          "description": "Searches deferred tool metadata"
+        }
+      ]
+    },
+    "status": 200,
+    "calls": 1
+  },
+  {
+    "name": "hosted tool_search is rejected",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "tools": [
+        {
+          "type": "tool_search",
+          "execution": "server"
+        }
+      ]
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "integration.unsupported-input"
+  },
+  {
+    "name": "tool_search description cannot bypass input guards",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "tools": [
+        {
+          "type": "tool_search",
+          "execution": "client",
+          "description": "BLOCK-ME"
+        }
+      ]
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "policy.input-blocked",
+    "stage": "input",
+    "guard": "TEST-GUARD"
   }
 ]

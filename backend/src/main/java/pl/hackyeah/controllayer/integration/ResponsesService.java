@@ -167,16 +167,29 @@ public class ResponsesService {
             ObjectNode response = stream ? ResponsesPayload.terminalResponse(raw) : ResponsesPayload.parse(raw);
             recordUsage(response, state);
             if (state.outputTokens > budget.maxOutputTokens()) throw new Denied(429, "budget.output_limit");
+            String body;
             if (stream) {
+                boolean redacted = false;
                 for (String text : ResponsesPayload.streamTexts(raw, response)) {
-                    checkedText(state, Stage.OUTPUT, text, true);
+                    redacted |= !checkedText(state, Stage.OUTPUT, text).equals(text);
+                }
+                // Stream jest już w całości zbuforowany. Przy redakcji nie przepisujemy pojedynczych ramek
+                // (wartość rozcięta między delty mogłaby przejść), tylko składamy nowy stream z zredagowanej
+                // odpowiedzi końcowej. Tymczasowe ramki oryginału nie wychodzą do klienta.
+                if (redacted) {
+                    ResponsesPayload.transform(response, text -> guards.run(state.policy, Stage.OUTPUT,
+                            new GuardContext(state.id, text, null, null)).text());
+                    body = ResponsesPayload.synthesizeStream(response);
+                } else {
+                    body = raw;
                 }
             } else {
-                ResponsesPayload.transform(response, text -> checkedText(state, Stage.OUTPUT, text, false));
+                ResponsesPayload.transform(response, text -> checkedText(state, Stage.OUTPUT, text));
+                body = ResponsesPayload.encode(response);
             }
             return ResponseEntity.ok().headers(reply.headers())
                     .contentType(stream ? MediaType.TEXT_EVENT_STREAM : MediaType.APPLICATION_JSON)
-                    .body((stream ? raw : ResponsesPayload.encode(response)).getBytes(StandardCharsets.UTF_8));
+                    .body(body.getBytes(StandardCharsets.UTF_8));
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
@@ -213,15 +226,11 @@ public class ResponsesService {
         return budgets.reconcile(state.role, budget, charged).thenReturn(error(state, denied.status, denied.code));
     }
 
-    private String checkedText(RequestState state, Stage stage, String text, boolean stream) {
+    private String checkedText(RequestState state, Stage stage, String text) {
         var result = guards.run(state.policy, stage, new GuardContext(state.id, text, null, null));
         state.trace.addAll(result.trace());
         if (result.blocked()) rejectContent(state, result, stage, false);
-        if (result.action() == GuardChainResult.Action.REDACT) {
-            // Rewriting individual SSE deltas can leak values split across frames. Block the buffered stream instead.
-            if (stream) rejectContent(state, result, stage, true);
-            state.action = "redact";
-        }
+        if (result.action() == GuardChainResult.Action.REDACT) state.action = "redact";
         return result.text();
     }
 

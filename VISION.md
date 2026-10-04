@@ -222,8 +222,11 @@ HTTP 400 zatrzymuje automatyczne ponawianie tury w Codex CLI 0.159.3; HTTP 422 j
 Błąd zawiera request ID, wersję polityki, etap, identyfikator guarda, bezpieczny kod powodu
 i klasy wykrytych danych (np. `PII-001/PL_PESEL`), bez surowej treści ani pełnego trace.
 Dozwolony stream wraca w natywnym formacie, wraz z dozwolonymi nagłówkami routingu i limitów.
-Redakcja OUTPUT w SSE powoduje blokadę całej odpowiedzi, aby nie ujawnić danych rozbitych
-między deltami. Odpowiedzi JSON mogą być redagowane. Adapter obsługuje tekst,
+Redakcja OUTPUT w SSE nie przepisuje pojedynczych delt (dane rozbite między deltami mogłyby
+przejść): gateway buforuje cały stream, redaguje odpowiedź końcową i składa z niej nowy stream
+(created → output_item.added/delta/done → completed). Tymczasowe ramki oryginału nie trafiają do
+klienta. Wcześniej redakcja blokowała cały stream, przez co Codex zapętlał się na tym samym pytaniu.
+Odpowiedzi JSON mogą być redagowane. Adapter obsługuje tekst,
 function/custom tool calls (także w namespace), definicje narzędzi w `input.additional_tools`
 (Codex CLI 0.159.3) oraz w głównym `tools`, reasoning oraz kompaktowanie. Obie lokalizacje
 definicji podlegają tej samej walidacji i kontroli INPUT. Odrzuca multimodalne wejście,

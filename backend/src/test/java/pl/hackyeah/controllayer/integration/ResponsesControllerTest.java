@@ -156,7 +156,16 @@ class ResponsesControllerTest {
             }
             if (scenario.path("status").asInt() == 200) assertEquals("opaque-routing-state", result.getResponseHeaders().getFirst("x-codex-turn-state"), label);
             if (scenario.path("upstreamStatus").asInt() == 429) assertEquals("7", result.getResponseHeaders().getFirst("Retry-After"), label);
-            if (scenario.path("status").asInt() == 200 && streaming) assertEquals(responseWire, body, label);
+            if (scenario.path("status").asInt() == 200 && streaming && !scenario.path("redacted").asBoolean(false)) {
+                assertEquals(responseWire, body, label);
+            }
+            if (scenario.path("status").asInt() == 200 && streaming && scenario.path("redacted").asBoolean(false)) {
+                // Zredagowany stream jest składany od nowa z odpowiedzi końcowej; elementy narzędzi i reasoning zostają.
+                var terminal = ResponsesPayload.terminalResponse(body).path("output");
+                assertEquals(nativeOutput.get(1), terminal.get(1), label);
+                assertEquals(nativeOutput.get(2), terminal.get(2), label);
+                for (JsonNode text : scenario.path("clientContains")) assertTrue(body.contains(text.asText()), label);
+            }
             if (scenario.path("status").asInt() == 200 && !streaming) {
                 var returned = ResponsesPayload.parse(body).path("output");
                 assertEquals(nativeOutput.get(1), returned.get(1), label);

@@ -24,6 +24,10 @@ final class ResponsesRequestValidator {
             String type = tool.path("type").asText();
             if (type.equals("namespace")) {
                 if (tool.get("tools") == null || !supportedTools(tool.get("tools"), depth + 1)) return false;
+            } else if (type.equals("tool_search")) {
+                // Codex CLI >= 0.159: wyszukiwanie narzędzi wykonywane lokalnie przez klienta. Wariant hostowany
+                // (wykonywany przez OpenAI poza naszą kontrolą) nadal odrzucamy, jak inne hosted tools.
+                if (!"client".equals(tool.path("execution").asText())) return false;
             } else if (!List.of("function", "custom").contains(type)) return false;
         }
         return true;

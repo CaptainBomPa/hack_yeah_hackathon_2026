@@ -74,8 +74,10 @@ zachowuje gateway/model/konto i po aktualizacji kodu także używa logowania Cha
 
 Natywne endpointy: `POST /v1/responses`, `POST /v1/responses/compact`, `GET /v1/models`.
 Katalog modeli jest filtrowany według polityki. Statusy 401 i 429 zachowują znaczenie logowania
-oraz limitu abonamentu. SSE jest buforowane do końca i kontroli wyjścia; redakcja SSE blokuje
-cały stream. JSON może być redagowany. Nie obsługujemy jeszcze WebSocket, obrazów/plików,
+oraz limitu abonamentu. SSE jest buforowane do końca i kontroli wyjścia; przy redakcji gateway
+składa nowy stream z zredagowanej odpowiedzi końcowej (tymczasowe ramki oryginału nie wychodzą),
+blokada nadal blokuje. JSON może być redagowany. Narzędzie `tool_search` jest dopuszczone tylko
+w wariancie wykonywanym przez klienta (`execution: client`, Codex CLI >= 0.159). Nie obsługujemy jeszcze WebSocket, obrazów/plików,
 background, ukrytej historii, hosted web search ani aplikacji desktopowej. Grupy narzędzi namespace
 Codexa są zachowywane i ich opisy oraz schematy przechodzą te same kontrole wejścia.
 Backend ChatGPT nie przyjmuje `max_output_tokens`: limit wyjścia sprawdzamy po generacji,

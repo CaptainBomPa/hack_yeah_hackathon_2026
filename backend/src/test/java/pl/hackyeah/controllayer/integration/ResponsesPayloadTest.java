@@ -52,6 +52,28 @@ class ResponsesPayloadTest {
     }
 
     @Test
+    void synthesizedStreamCarriesExactlyTheRedactedFinalResponse() {
+        var response = ResponsesPayload.parse("""
+                {"id":"resp_1","object":"response","status":"completed","output":[
+                  {"type":"reasoning","id":"rs_1","encrypted_content":"opaque","summary":[]},
+                  {"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"mail: <EMAIL_ADDRESS>"}]},
+                  {"type":"function_call","id":"fc_1","call_id":"c1","name":"shell","arguments":"{}"}],
+                 "usage":{"input_tokens":5,"output_tokens":3}}""");
+        String sse = ResponsesPayload.synthesizeStream(response);
+
+        assertEquals(response, ResponsesPayload.terminalResponse(sse));
+        // Klient widzi tylko treść końcową: tekst wiadomości raz w delcie i w elementach done/completed.
+        assertEquals(java.util.Set.of("mail: <EMAIL_ADDRESS>", "{}"),
+                java.util.Set.copyOf(ResponsesPayload.streamTexts(sse, ResponsesPayload.terminalResponse(sse))));
+        var types = sse.lines().filter(line -> line.startsWith("event: ")).map(line -> line.substring(7)).toList();
+        assertEquals(java.util.List.of("response.created",
+                "response.output_item.added", "response.output_item.done",
+                "response.output_item.added", "response.output_text.delta", "response.output_item.done",
+                "response.output_item.added", "response.output_item.done",
+                "response.completed"), types);
+    }
+
+    @Test
     void plainStringInputIsCurrent() {
         assertEquals(Map.of("hello", true), classify("{\"model\":\"m\",\"input\":\"hello\"}"));
     }

@@ -108,6 +108,49 @@ public final class ResponsesPayload {
         return "assistant".equals(item.path("role").asText()) || type.equals("reasoning") || type.endsWith("_call");
     }
 
+    /**
+     * Minimalny stream SSE Responses API zbudowany z (zredagowanej) odpowiedzi końcowej: response.created,
+     * dla każdego elementu output_item.added (wiadomość bez treści), jedna delta na część output_text
+     * i output_item.done z pełnym elementem, na końcu response.completed/incomplete. Kolejność jak u OpenAI,
+     * więc klient (Codex CLI) przetwarza go tak samo jak oryginał.
+     */
+    public static String synthesizeStream(ObjectNode response) {
+        var sse = new StringBuilder();
+        ObjectNode created = response.deepCopy();
+        created.putArray("output");
+        created.put("status", "in_progress");
+        created.remove("usage");
+        frame(sse, event("response.created").set("response", created));
+        JsonNode output = response.path("output");
+        for (int index = 0; index < output.size(); index++) {
+            JsonNode item = output.get(index);
+            JsonNode added = item.deepCopy();
+            if (added instanceof ObjectNode message && message.path("content").isArray()) message.putArray("content");
+            frame(sse, event("response.output_item.added").put("output_index", index).set("item", added));
+            JsonNode content = item.path("content");
+            for (int part = 0; part < content.size(); part++) {
+                if ("output_text".equals(content.get(part).path("type").asText())) {
+                    frame(sse, event("response.output_text.delta").put("item_id", item.path("id").asText(""))
+                            .put("output_index", index).put("content_index", part)
+                            .put("delta", content.get(part).path("text").asText("")));
+                }
+            }
+            frame(sse, event("response.output_item.done").put("output_index", index).set("item", item));
+        }
+        String terminal = "incomplete".equals(response.path("status").asText()) ? "response.incomplete" : "response.completed";
+        frame(sse, event(terminal).set("response", response));
+        return sse.toString();
+    }
+
+    private static ObjectNode event(String type) {
+        return JSON.createObjectNode().put("type", type);
+    }
+
+    private static void frame(StringBuilder sse, ObjectNode event) {
+        sse.append("event: ").append(event.path("type").asText()).append('\n')
+                .append("data: ").append(encode(event)).append("\n\n");
+    }
+
     /** Completed response is authoritative; reject truncated/error streams before releasing bytes. */
     public static ObjectNode terminalResponse(String sse) {
         ObjectNode response = null;
