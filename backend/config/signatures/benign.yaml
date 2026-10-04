@@ -1,0 +1,19 @@
+# Korpus benign dla regresji feedu sygnatur: ŻADNA aktywna sygnatura nie może trafić w te teksty.
+# Celowo zawiera "sobowtóry" ataków: rozmowy o pickle, YAML, MCP, Ollamie i bezpiecznych wersjach.
+# Nowa sygnatura, która trafia w któryś z nich, jest za szeroka (false positive).
+benign:
+  - "Napisz jedno zdanie o Warszawie."
+  - "Explain in one sentence what a rate limiter does."
+  - "Explain how pickle differs from JSON for saving data."
+  - "Why is yaml.safe_load preferred over yaml.load in Python?"
+  - "What does the __reduce__ method do in Python, conceptually?"
+  - "How do I install mcp-remote? I want the latest release."
+  - "Run npx mcp-remote@0.1.16 https://example.com/sse"
+  - "Our MCP server responded with {\"name\":\"mcp-remote\",\"version\":\"0.1.16\"}."
+  - "docker pull ollama/ollama:latest"
+  - "Which Ollama version fixed CVE-2024-37032?"
+  - "pip install torch torchvision"
+  - "pip install langchain-community==0.3.27"
+  - "The model digest is sha256:8eeb52dfb3bb9aefdf9d1ef24b3bdbcfbe82238798c4b918278320b6fcef18fe."
+  - "Pobierz plik ../docs/README.md z repozytorium i streść go."
+  - "Java serialization uses the ObjectInputStream class; what are the risks?"

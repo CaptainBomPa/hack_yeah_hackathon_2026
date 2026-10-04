@@ -73,6 +73,38 @@ tasks.named('test') {
 	systemProperty 'allure.results.directory', "${layout.buildDirectory.get().asFile}/allure-results"
 }
 
+// Threat feed (docs/redteam-feed.md): OSV → triage → proponowany feed sygnatur + raport w
+// ../tests/redteam/proposals/<data>/. Offline (snapshot): ./gradlew threatFeed --args="--offline"
+tasks.register('threatFeed', JavaExec) {
+	group = 'threat feed'
+	description = 'Fetches OSV advisories for the watchlist and writes a proposed signature feed + report.'
+	classpath = sourceSets.main.runtimeClasspath
+	mainClass = 'pl.hackyeah.controllayer.threatfeed.ThreatFeedTool'
+	workingDir = projectDir
+}
+
+// Regresja feedu sygnatur: każda sygnatura z config/signatures/active.yaml musi łapać swoje
+// przypadki pozytywne, przepuszczać negatywne i nie trafiać w korpus benign.
+tasks.register('signatureRegression', Test) {
+	group = 'threat feed'
+	description = 'Runs the signature feed regression (config/signatures/active.yaml).'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform()
+	filter {
+		includeTestsMatching 'pl.hackyeah.controllayer.guard.signature.SignatureFeedRegressionTest'
+	}
+	// -Pfeed=<plik> sprawdza inny feed, np. propozycję z threatFeed przed przeniesieniem do active.yaml.
+	def feed = findProperty('feed') ?: 'config/signatures/active.yaml'
+	systemProperty 'signatureFeed', feed
+	// Feed to plik poza classpath — bez tego Gradle uznałby test za "up-to-date" po edycji feedu.
+	inputs.file(feed)
+	inputs.dir('config/signatures')
+	testLogging {
+		events 'passed', 'failed'
+	}
+}
+
 // Stawia Postgresa z docker-compose.yml i czeka, aż będzie healthy.
 tasks.register('dbUp', Exec) {
 	workingDir = rootProject.projectDir.parentFile

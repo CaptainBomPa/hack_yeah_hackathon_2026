@@ -203,6 +203,10 @@ Sekrety obsługuje guard `SEC-GITLEAKS` (przed PII): reguły to przypięta paczk
 silnik w Javie — jeden przebieg Aho-Corasick po keywordach, regex tylko wokół trafień, filtry Gitleaks
 (entropia, allowlisty). Binarka Gitleaks nie działa w runtime. Polityka (`blockRules`, `monitorRules`,
 `disabledRules`) wskazuje id reguł Gitleaks; domyślnie redakcja, klucz prywatny blokuje.
+Historyczne ataki obsługuje guard `SIG-FEED` (pierwszy w łańcuchu): sygnatury są danymi w
+`backend/config/signatures/active.yaml` z hot reloadem bez restartu. Proponuje je narzędzie `./gradlew threatFeed`
+(OSV.dev → triage → propozycja + raport), a do aktywnego feedu trafiają dopiero po akceptacji przez człowieka
+i przejściu `./gradlew signatureRegression`. Szczegóły: [`docs/redteam-feed.md`](docs/redteam-feed.md) §0.
 
 **Logowanie (docs/auth, bez SSO i zewnętrznego IdP — działa offline):** konta lokalne z
 `backend/config/users.yaml`, zakładane w bazie przy starcie (hasła BCrypt). Przeglądarka loguje się
@@ -280,6 +284,8 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
 - polityki: **działa e2e** — tabela `policy_version` (Flyway V5) jako źródło prawdy, `PolicyStore` z
   atomową podmianą, walidacja, API `/api/policy/**` (zapis, historia, restore, eksport/import YAML),
   ekran Policies; audyt i odpowiedź czatu niosą `policyVersion` (Flyway V6);
+- historyczne ataki: **działa** — guard `SIG-FEED` z feedem sygnatur (hot reload, fail-closed przy błędnym
+  pierwszym pliku), narzędzie OSV → propozycje + raport i regresja feedu (`docs/redteam-feed.md` §0);
 - termin zgłoszenia projektu: 4.10.2026, 23:00 (RULES, pkt 5);
 - decision pipeline, polityki, guardraile i data-driven test suite są jeszcze do
   zaimplementowania.

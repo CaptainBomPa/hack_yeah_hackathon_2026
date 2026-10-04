@@ -38,6 +38,16 @@ control-layer:
   guards:
     enabled: true
     rules:
+      # Sygnatury historycznych ataków (docs/redteam-feed.md): feed YAML z hot reloadem, poza obrazem
+      # (w docker-compose montowany z backend/config). Pierwszy w łańcuchu, żeby widział tekst przed redakcją.
+      # disabledSignatures: id sygnatur wyłączonych polityką bez edycji feedu.
+      SIG-FEED:
+        enabled: true
+        order: 40
+        params:
+          feed: config/signatures/active.yaml
+          checkIntervalMs: 1000
+          disabledSignatures: ""
       # Sekrety (docs/deterministic/02-secret-detection.md): paczka reguł Gitleaks v8.30.1 (MIT) z
       # src/main/resources/rules/gitleaks/, skan Aho-Corasick + regex w oknie. Przed PII, żeby sekret
       # zawierający cyfry został zredagowany w całości. Id reguł Gitleaks rozdzielone przecinkami:

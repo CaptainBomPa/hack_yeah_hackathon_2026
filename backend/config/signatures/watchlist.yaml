@@ -1,0 +1,9 @@
+# Paczki obserwowane w OSV.dev przez ./gradlew threatFeed (docs/redteam-feed.md).
+# ecosystem i name dokładnie jak w OSV (https://ossf.github.io/osv-schema/#affectedpackage-field).
+# aliases: inne nazwy, pod którymi komponent pojawia się w ruchu (np. obraz Dockera).
+packages:
+  - { ecosystem: npm, name: mcp-remote }
+  - { ecosystem: npm, name: "@modelcontextprotocol/inspector" }
+  - { ecosystem: Go, name: github.com/ollama/ollama, aliases: [ollama/ollama] }
+  - { ecosystem: PyPI, name: langchain }
+  - { ecosystem: PyPI, name: torch }

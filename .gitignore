@@ -31,3 +31,6 @@ venv/
 
 # Logs
 *.log
+
+# Threat feed: raporty generowane przez threat-feed.bat / ./gradlew threatFeed
+tests/redteam/proposals/
