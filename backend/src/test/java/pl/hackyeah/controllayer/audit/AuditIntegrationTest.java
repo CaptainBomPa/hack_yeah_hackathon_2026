@@ -170,6 +170,48 @@ class AuditIntegrationTest {
                 .jsonPath("$.principals[?(@ == 'tester')]").exists();
     }
 
+    @Test
+    void reasonMatchesBothTheBlockingAndTheRedactingControl() {
+        String marker = UUID.randomUUID().toString().substring(0, 8);
+        String blocked = append("block", "SEC-GITLEAKS", "sess-" + marker);
+        String redacted = UUID.randomUUID().toString();
+        auditService.append(new AuditEntry(redacted, Instant.now(), "tester", "chat", "sess-" + marker, "test-model",
+                "redact", null, 200, 12, 3, 2, 3, List.of(
+                        new ControlTrace("input.history", "deterministic", "redact", 0, "1 cleaned"),
+                        new ControlTrace("PII-RECOGNIZERS", "deterministic", "redact", 1, "PII-001/PL_PESEL×1"),
+                        new ControlTrace("SEC-GITLEAKS", "deterministic", "allow", 1, null)), 1L));
+        // allow z redakcją tylko w historii — to nie jest powód decyzji.
+        append("allow", null, "sess-" + marker);
+
+        client.get().uri(uri -> uri.path("/api/audit/events").queryParam("sessionId", marker)
+                        .queryParam("reason", "PII-RECOGNIZERS").build())
+                .header("Authorization", basic(adminLogin))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.items.length()").isEqualTo(1)
+                .jsonPath("$.items[0].requestId").isEqualTo(redacted);
+
+        // SEC-GITLEAKS zablokował jedno żądanie; w redact był tylko "allow" — nie pasuje.
+        client.get().uri(uri -> uri.path("/api/audit/events").queryParam("sessionId", marker)
+                        .queryParam("reason", "SEC-GITLEAKS").build())
+                .header("Authorization", basic(adminLogin))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.items.length()").isEqualTo(1)
+                .jsonPath("$.items[0].requestId").isEqualTo(blocked);
+
+        client.get().uri("/api/audit/facets")
+                .header("Authorization", basic(adminLogin))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.reasons[?(@ == 'PII-RECOGNIZERS')]").exists()
+                .jsonPath("$.reasons[?(@ == 'SEC-GITLEAKS')]").exists()
+                .jsonPath("$.reasons[?(@ == 'input.history')]").doesNotExist();
+    }
+
     private String append(String action, String blockedBy, String sessionId) {
         String requestId = UUID.randomUUID().toString();
         auditService.append(new AuditEntry(requestId, Instant.now(), "tester", "chat", sessionId, "test-model",

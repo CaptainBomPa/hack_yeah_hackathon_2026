@@ -241,6 +241,11 @@ function TurnView({ turn, selected, onSelect }: { turn: Turn; selected: boolean;
         <span className="inline-block max-w-[85%] whitespace-pre-wrap rounded-lg bg-indigo-600 px-3 py-2 text-left text-sm">
           {turn.user}
         </span>
+        {r?.redactedPrompt && (
+          <p className="ml-auto mt-1 max-w-[85%] whitespace-pre-wrap text-left text-xs text-slate-400">
+            <span className="text-amber-300">Sent to the model as:</span> <RedactedText text={r.redactedPrompt} />
+          </p>
+        )}
       </div>
       {r && (
         <div className="space-y-1">

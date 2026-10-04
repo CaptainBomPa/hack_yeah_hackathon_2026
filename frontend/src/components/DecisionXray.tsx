@@ -1,6 +1,7 @@
 import type { ChatBudget, ControlTrace, GuardedChatResponse } from '../api/types'
 import ActionBadge, { StatusDot } from './ActionBadge'
 import { SpanHighlight } from './HighlightedText'
+import { redactedBy } from '../lib/decision'
 
 function budgetPct(budget: ChatBudget): number {
   if (!budget.cap) return 0
@@ -13,10 +14,13 @@ interface Props {
   clientLatencyMs?: number
   /** Tekst użytkownika do podświetlenia spanów (tylko Playground; audyt nie przechowuje promptów). */
   userText?: string
+  /** Klik w kontrolę-powód (audyt: filtr `reason`). Bez tego powód jest zwykłym tekstem. */
+  onReason?: (policy: string) => void
 }
 
 /** Explainable Verdict / Security X-ray (VISION.md §5 E): ścieżka kontroli, sygnały, akcja, latencja. */
-export default function DecisionXray({ response, clientLatencyMs, userText }: Props) {
+export default function DecisionXray({ response, clientLatencyMs, userText, onReason }: Props) {
+  const redacting = redactedBy(response.action, response.trace)
   const controlsMs = response.trace.reduce((sum, t) => sum + t.latencyMs, 0)
   const totalMs = response.latency?.totalMs ?? clientLatencyMs
   const upstreamMs = response.latency?.upstreamMs
@@ -29,7 +33,18 @@ export default function DecisionXray({ response, clientLatencyMs, userText }: Pr
           <ActionBadge action={response.action} />
           {response.blockedBy && (
             <span className="text-slate-300">
-              by <code className="text-red-300">{response.blockedBy}</code>
+              by <Reason policy={response.blockedBy} className="text-red-300" onReason={onReason} />
+            </span>
+          )}
+          {redacting.length > 0 && (
+            <span className="text-slate-300">
+              because of{' '}
+              {redacting.map((policy, i) => (
+                <span key={policy}>
+                  {i > 0 && ', '}
+                  <Reason policy={policy} className="text-amber-300" onReason={onReason} />
+                </span>
+              ))}
             </span>
           )}
           {response.status && <StatusDot status={response.status} />}
@@ -93,6 +108,15 @@ export default function DecisionXray({ response, clientLatencyMs, userText }: Pr
         </ol>
       </section>
     </div>
+  )
+}
+
+function Reason({ policy, className, onReason }: { policy: string; className: string; onReason?: (policy: string) => void }) {
+  if (!onReason) return <code className={className}>{policy}</code>
+  return (
+    <button onClick={() => onReason(policy)} title={`Show requests with reason ${policy}`} className="hover:underline">
+      <code className={className}>{policy}</code>
+    </button>
   )
 }
 

@@ -59,7 +59,11 @@ public class AuditService implements AuditLog {
     }
 
     public List<ControlTrace> traceOf(AuditEvent event) {
-        return json.readValue(event.getControls(), TRACE_LIST);
+        return parseControls(event.getControls());
+    }
+
+    public List<ControlTrace> parseControls(String controls) {
+        return json.readValue(controls, TRACE_LIST);
     }
 
     public Optional<AuditEvent> find(String requestId) {

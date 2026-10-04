@@ -64,10 +64,14 @@ function load(key: string): Persisted {
   }
 }
 
-/** Tury zablokowane nie trafiają do historii wysyłanej modelowi — inaczej każde kolejne pytanie byłoby blokowane. */
+/**
+ * Historia wysyłana modelowi: surowa, tak jak robi to każdy klient (np. Codex CLI). Czyszczeniem zajmuje
+ * się serwer (ConversationGuard): historię redaguje, a treść, którą by zablokował, zastępuje placeholderem —
+ * o wyniku żądania decyduje tylko nowy prompt. Pomijamy tylko tury, które nie dostały odpowiedzi gatewaya.
+ */
 function historyFrom(turns: Turn[]): ChatMessage[] {
   return turns.flatMap((t) =>
-    t.response?.message ? [{ role: 'user' as const, content: t.user }, t.response.message] : [],
+    t.response ? [{ role: 'user' as const, content: t.user }, ...(t.response.message ? [t.response.message] : [])] : [],
   )
 }
 

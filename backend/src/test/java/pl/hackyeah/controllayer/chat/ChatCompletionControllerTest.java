@@ -245,6 +245,98 @@ class ChatCompletionControllerTest {
     }
 
     @Test
+    void returnsTheRedactedPromptSoTheClientCanResendItAsHistory() {
+        withSecretGuard();
+        String token = "ghp_" + "x8Kq2mN7pL4vR9tY1wE3uI6oA5sD0fG8hJ2k";
+        clientAs("chat").post().uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model",
+                        List.of(new ChatMessage("user", "mój token " + token + " nie działa"))))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.redactedPrompt").isEqualTo("mój token [REDACTED:github-pat] nie działa");
+    }
+
+    @Test
+    void redactionInHistoryDoesNotMakeTheNextQuestionRedacted() {
+        withSecretGuard();
+        String token = "ghp_" + "x8Kq2mN7pL4vR9tY1wE3uI6oA5sD0fG8hJ2k";
+        var history = List.of(
+                new ChatMessage("user", "mój token " + token + " nie działa"),
+                new ChatMessage("assistant", "czesc"),
+                new ChatMessage("user", "a co z pogodą?"));
+        clientAs("chat").post().uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model", history))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.action").isEqualTo("allow")
+                .jsonPath("$.redactedPrompt").doesNotExist()
+                .jsonPath("$.trace[?(@.policy == 'input.history')].action").isEqualTo("redact");
+        // Klient odesłał surowy sekret w historii — model i tak go nie zobaczy.
+        assertFalse(upstreamBodies.getFirst().contains(token), "sekret z historii nie może dotrzeć do modelu");
+    }
+
+    @Test
+    void historyIsCheckedFromCacheOnTheNextRequest() {
+        withSecretGuard();
+        var first = List.of(new ChatMessage("user", "hej"));
+        clientAs("chat").post().uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model", first)).exchange().expectStatus().isOk();
+        var second = List.of(new ChatMessage("user", "hej"), new ChatMessage("assistant", "czesc"),
+                new ChatMessage("user", "co słychać?"));
+        clientAs("chat").post().uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model", second))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.trace[?(@.policy == 'input.history')].detail")
+                .isEqualTo("2 earlier messages re-checked (1 from cache, 0 cleaned)");
+    }
+
+    private static final String PRIVATE_KEY = "-----BEGIN RSA " + "PRIVATE KEY-----\n"
+            + "MIIEowIBAAKCAQEAu1SU1LfVLPHCozMxH2Mo4lgOEePzNm0tRgeLezV6ffAt0gun\n"
+            + "-----END RSA " + "PRIVATE KEY-----";
+
+    @Test
+    void blockedContentSmuggledIntoHistoryIsReplacedNotSentToTheModel() {
+        withSecretGuard();
+        var history = List.of(new ChatMessage("user", PRIVATE_KEY), new ChatMessage("assistant", "ok"),
+                new ChatMessage("user", "hej"));
+        clientAs("chat").post().uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model", history))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.action").isEqualTo("allow")
+                .jsonPath("$.trace[?(@.policy == 'input.history')].detail")
+                .isEqualTo("2 earlier messages re-checked (0 from cache, 1 cleaned)");
+        assertFalse(upstreamBodies.getFirst().contains("PRIVATE KEY"), "zablokowana treść nie może dotrzeć do modelu");
+        assertTrue(upstreamBodies.getFirst().contains("[removed by LLMinator: SEC-GITLEAKS]"));
+    }
+
+    @Test
+    void aBlockedPromptLeftInHistoryWithoutAReplyDoesNotBlockTheNextOne() {
+        // Tak robi Codex CLI: zablokowany prompt zostaje w jego historii, bez odpowiedzi asystenta.
+        withSecretGuard();
+        clientAs("chat").post().uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", PRIVATE_KEY))))
+                .exchange()
+                .expectStatus().isEqualTo(403);
+        var next = List.of(new ChatMessage("user", PRIVATE_KEY), new ChatMessage("user", "hej"));
+        clientAs("chat").post().uri("/v1/chat/completions")
+                .bodyValue(new ChatCompletionRequest("test-model", next))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.action").isEqualTo("allow")
+                .jsonPath("$.trace[?(@.policy == 'input.history')].detail")
+                .isEqualTo("1 earlier messages re-checked (1 from cache, 1 cleaned)");
+        assertEquals(1, upstreamBodies.size());
+        assertFalse(upstreamBodies.getFirst().contains("PRIVATE KEY"));
+    }
+
+    @Test
     void blocksPrivateKeysWithoutCallingTheModel() {
         withSecretGuard();
         String key = "-----BEGIN RSA " + "PRIVATE KEY-----\n"

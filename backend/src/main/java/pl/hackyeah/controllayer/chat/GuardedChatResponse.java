@@ -17,7 +17,8 @@ public record GuardedChatResponse(
         Usage usage,
         BudgetUsage budget, // null, gdy rola wywołującego nie ma skonfigurowanego limitu
         Long policyVersion, // wersja polityki, która podjęła decyzję (docs/policy-management-plan.md)
-        String policyHash) {
+        String policyHash,
+        String redactedPrompt) { // ostatni prompt użytkownika po redakcji; null, gdy nic nie zredagowano
 
     public GuardedChatResponse {
         trace = List.copyOf(trace);
@@ -25,17 +26,17 @@ public record GuardedChatResponse(
 
     public static GuardedChatResponse allow(
             String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace, BudgetUsage budget) {
-        return new GuardedChatResponse(requestId, "allow", message, null, trace, usage, budget, null, null);
+        return new GuardedChatResponse(requestId, "allow", message, null, trace, usage, budget, null, null, null);
     }
 
     public static GuardedChatResponse redact(
             String requestId, ChatMessage message, Usage usage, List<ControlTrace> trace, BudgetUsage budget) {
-        return new GuardedChatResponse(requestId, "redact", message, null, trace, usage, budget, null, null);
+        return new GuardedChatResponse(requestId, "redact", message, null, trace, usage, budget, null, null, null);
     }
 
     public static GuardedChatResponse block(
             String requestId, String blockedBy, List<ControlTrace> trace, BudgetUsage budget) {
-        return new GuardedChatResponse(requestId, "block", null, blockedBy, trace, null, budget, null, null);
+        return new GuardedChatResponse(requestId, "block", null, blockedBy, trace, null, budget, null, null, null);
     }
 
     public static GuardedChatResponse block(String requestId, String blockedBy, List<ControlTrace> trace) {
@@ -44,6 +45,16 @@ public record GuardedChatResponse(
 
     /** Ta sama odpowiedź z oznaczeniem wersji polityki, która ją wyprodukowała. */
     public GuardedChatResponse withPolicy(long version, String hash) {
-        return new GuardedChatResponse(requestId, action, message, blockedBy, trace, usage, budget, version, hash);
+        return new GuardedChatResponse(requestId, action, message, blockedBy, trace, usage, budget, version, hash,
+                redactedPrompt);
+    }
+
+    /**
+     * Ta sama odpowiedź z promptem po redakcji. Klient wysyła go w historii zamiast oryginału, żeby
+     * kolejne pytania nie były redagowane (ani blokowane po zmianie polityki) przez tę samą starą wiadomość.
+     */
+    public GuardedChatResponse withRedactedPrompt(String prompt) {
+        return new GuardedChatResponse(requestId, action, message, blockedBy, trace, usage, budget, policyVersion,
+                policyHash, prompt);
     }
 }

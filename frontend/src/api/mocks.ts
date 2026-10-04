@@ -1,3 +1,4 @@
+import { redactedBy } from '../lib/decision'
 import { AuthRequiredError, LoginError, PolicyConflictError, PolicyInvalidError, type ChatParams } from './client'
 import { newId } from '../lib/id'
 import type {
@@ -327,6 +328,7 @@ export function auditEvents(filters: AuditFilters, before?: number | null): Prom
       anyOf(filters.principal, e.principal) &&
       anyOf(filters.model, e.model) &&
       anyOf(filters.blockedBy, e.blockedBy) &&
+      (!filters.reason?.length || [e.blockedBy, ...redactedBy(e.action, e.trace)].some((r) => r !== null && filters.reason!.includes(r))) &&
       (!session || (e.sessionId ?? '').toLowerCase().includes(session)),
   )
   const items = matches.slice(0, 50)
@@ -340,6 +342,7 @@ export function auditFacets(): Promise<AuditFacets> {
     principals: distinct(MOCK_AUDIT.map((e) => e.principal)),
     models: distinct(MOCK_AUDIT.map((e) => e.model)),
     blockedBy: distinct(MOCK_AUDIT.map((e) => e.blockedBy)),
+    reasons: distinct(MOCK_AUDIT.flatMap((e) => [e.blockedBy, ...redactedBy(e.action, e.trace)])),
   })
 }
 

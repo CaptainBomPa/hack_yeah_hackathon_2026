@@ -195,7 +195,7 @@ function DashboardBody({ data, window }: { data: DashboardData; window: Dashboar
               {data.controls.map((c) => (
                 <li key={`${c.policy}-${c.action}`}>
                   <button
-                    onClick={() => navigate(c.action === 'block' ? `/audit?blockedBy=${encodeURIComponent(c.policy)}` : `/audit?action=${c.action}`)}
+                    onClick={() => navigate(c.action === 'block' || c.action === 'redact' ? `/audit?reason=${encodeURIComponent(c.policy)}` : `/audit?action=${c.action}`)}
                     className="group w-full text-left"
                     title="show in audit log"
                   >

@@ -6,21 +6,23 @@ import ActionBadge from '../components/ActionBadge'
 import DecisionXray from '../components/DecisionXray'
 import MultiSelect from '../components/MultiSelect'
 import PageHeader from '../components/PageHeader'
+import { redactedBy } from '../lib/decision'
 
 /** Filtry wielowartościowe (lista z checkboxami); sesja osobno — wyszukiwanie „zawiera”. */
-const LIST_FILTERS = ['action', 'principal', 'model', 'blockedBy'] as const
+const LIST_FILTERS = ['action', 'principal', 'model', 'reason'] as const
 type ListFilter = (typeof LIST_FILTERS)[number]
 const FILTER_LABELS: Record<ListFilter, string> = {
   action: 'Action',
   principal: 'User',
   model: 'Model',
-  blockedBy: 'Blocked by',
+  reason: 'Reason',
 }
+
 const FACET_OF: Record<ListFilter, keyof AuditFacets> = {
   action: 'actions',
   principal: 'principals',
   model: 'models',
-  blockedBy: 'blockedBy',
+  reason: 'reasons',
 }
 const REFRESH_MS = 5000
 const SESSION_DEBOUNCE_MS = 400
@@ -46,7 +48,7 @@ export default function AuditLogPage() {
   const hasFilters = LIST_FILTERS.some((k) => params.has(k)) || params.has('sessionId')
   const selectedId = params.get('requestId')
 
-  const [facets, setFacets] = useState<AuditFacets>({ actions: [], principals: [], models: [], blockedBy: [] })
+  const [facets, setFacets] = useState<AuditFacets>({ actions: [], principals: [], models: [], blockedBy: [], reasons: [] })
   const [sessionInput, setSessionInput] = useState(params.get('sessionId') ?? '')
 
   const [events, setEvents] = useState<AuditEvent[]>([])
@@ -275,9 +277,17 @@ export default function AuditLogPage() {
                   </td>
                   <td className="px-3 py-2">
                     {e.blockedBy ? (
-                      <FilterLink onClick={() => filterBy('blockedBy', e.blockedBy)}>
+                      <FilterLink onClick={() => filterBy('reason', e.blockedBy)}>
                         <code className="text-xs">{e.blockedBy}</code>
                       </FilterLink>
+                    ) : redactedBy(e.action, e.trace).length > 0 ? (
+                      <span className="flex flex-wrap gap-1">
+                        {redactedBy(e.action, e.trace).map((policy) => (
+                          <FilterLink key={policy} onClick={() => filterBy('reason', policy)}>
+                            <code className="text-xs text-amber-300">{policy}</code>
+                          </FilterLink>
+                        ))}
+                      </span>
                     ) : (
                       <span className="text-slate-600">—</span>
                     )}
@@ -324,7 +334,11 @@ export default function AuditLogPage() {
                   <span className="break-all font-mono text-slate-500">{selected.recordHash}</span>
                 </Field>
               </dl>
-              <DecisionXray response={asDecision(selected)} clientLatencyMs={selected.latencyMs} />
+              <DecisionXray
+                response={asDecision(selected)}
+                clientLatencyMs={selected.latencyMs}
+                onReason={(policy) => filterBy('reason', policy)}
+              />
             </div>
           )}
         </aside>

@@ -28,6 +28,7 @@ import pl.hackyeah.controllayer.policy.PolicySource;
 public class GuardChain {
 
     private static final Logger log = LoggerFactory.getLogger(GuardChain.class);
+    private static final String GUARD_ERROR = "guard error";
 
     private record Entry(Guard guard, GuardSettings settings, int order) {}
 
@@ -37,6 +38,7 @@ public class GuardChain {
     private final List<Guard> guards;
     private final PolicySource policySource;
     private volatile Built built;
+    private final GuardResultCache resultCache = new GuardResultCache(10_000, Duration.ofMinutes(30));
 
     @Autowired
     public GuardChain(List<Guard> guards, PolicySource policySource) {
@@ -66,6 +68,29 @@ public class GuardChain {
         return run(policySource.current(), stage, context);
     }
 
+    /** Wynik z {@link #runCached}: `cacheHit` = łańcuch nie był uruchamiany, wynik pochodzi z cache. */
+    public record CachedRun(GuardChainResult result, boolean cacheHit) {}
+
+    /**
+     * Jak {@link #run(ActivePolicy, Stage, GuardContext)}, ale z cache po treści (historia rozmowy,
+     * {@link ConversationGuard}). Nie cache'ujemy wyników niepewnych: błąd guarda albo awaria providera
+     * (fail-closed / fail-open) — po powrocie providera ta sama treść musi zostać sprawdzona naprawdę.
+     */
+    public CachedRun runCached(ActivePolicy policy, Stage stage, GuardContext context) {
+        String key = GuardResultCache.key(policy.hash(), stage, context.text());
+        var hit = resultCache.get(key);
+        if (hit.isPresent()) {
+            return new CachedRun(hit.get(), true);
+        }
+        GuardChainResult result = run(policy, stage, context);
+        boolean degraded = result.trace().stream().map(ControlTrace::detail).anyMatch(detail -> detail != null
+                && (detail.contains("fail-open") || detail.contains("fail-closed") || detail.equals(GUARD_ERROR)));
+        if (!degraded) {
+            resultCache.put(key, result);
+        }
+        return new CachedRun(result, false);
+    }
+
     /** Uruchamia łańcuch według podanej wersji polityki (snapshot wzięty na początku żądania). */
     public GuardChainResult run(ActivePolicy policy, Stage stage, GuardContext context) {
         var trace = new ArrayList<ControlTrace>();
@@ -80,7 +105,7 @@ public class GuardChain {
                 verdict = entry.guard().check(current, entry.settings());
             } catch (RuntimeException error) {
                 log.error("requestId={} guard={} action=block reason=guard-error", context.requestId(), id, error);
-                verdict = new Verdict.Block("guard error");
+                verdict = new Verdict.Block(GUARD_ERROR);
             }
             long latencyMs = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
 

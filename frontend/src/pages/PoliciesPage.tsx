@@ -238,9 +238,27 @@ interface SectionProps {
   update(mutate: (doc: PolicyDocument) => void): void
 }
 
+/**
+ * Modele z polityki, których nie ma w katalogu wdrożenia (np. po zmianie konfiguracji albo brancha).
+ * Walidator odrzuca zapis z takim modelem, więc UI musi je pokazać, żeby admin mógł je usunąć.
+ */
+function staleModels(doc: PolicyDocument, catalog: PolicyCatalog): string[] {
+  const known = new Set(catalog.models.map((m) => m.tag))
+  const used = [...doc.models.map((m) => m.tag), ...Object.values(doc.roles).flatMap((r) => r.models)]
+  return [...new Set(used)].filter((tag) => tag !== ANY_MODEL && !known.has(tag))
+}
+
+function removeModel(doc: PolicyDocument, tag: string) {
+  doc.models = doc.models.filter((m) => m.tag !== tag)
+  Object.values(doc.roles).forEach((role) => {
+    role.models = role.models.filter((m) => m !== tag)
+  })
+}
+
 function RolesSection({ draft, catalog, errorsAt, update }: SectionProps) {
   const [newRole, setNewRole] = useState('')
-  const tags = catalog.models.map((m) => m.tag)
+  const stale = staleModels(draft, catalog)
+  const tags = [...catalog.models.map((m) => m.tag), ...stale]
   return (
     <Section title="Roles & model access" subtitle="Which models each role may call and its daily token budget. A role without an entry has no access.">
       <div className="overflow-x-auto">
@@ -252,6 +270,7 @@ function RolesSection({ draft, catalog, errorsAt, update }: SectionProps) {
               {tags.map((tag) => (
                 <th key={tag} className="px-2 py-1 font-normal normal-case" title={tag}>
                   <span className="block max-w-[10rem] truncate">{tag}</span>
+                  {stale.includes(tag) && <span className="block text-[10px] text-amber-300">not in catalog</span>}
                 </th>
               ))}
               <th className="px-2 py-1 font-normal">Daily token budget</th>
@@ -350,6 +369,7 @@ function RolesSection({ draft, catalog, errorsAt, update }: SectionProps) {
 }
 
 function ModelsSection({ draft, catalog, errorsAt, update }: SectionProps) {
+  const stale = staleModels(draft, catalog)
   return (
     <Section title="Models" subtitle="Allowlist. A disabled model is rejected for every role, exactly like an unknown model.">
       <ul className="space-y-2 text-sm">
@@ -373,6 +393,18 @@ function ModelsSection({ draft, catalog, errorsAt, update }: SectionProps) {
             </li>
           )
         })}
+        {stale.map((tag) => (
+          <li key={tag} className="flex items-center gap-3">
+            <span className="font-mono text-slate-400 line-through">{tag}</span>
+            <span className="text-xs text-amber-300">not in the deployment catalog — remove it to save the policy</span>
+            <button
+              onClick={() => update((doc) => removeModel(doc, tag))}
+              className="rounded bg-slate-800 px-2 py-0.5 text-xs hover:bg-slate-700 hover:text-red-300"
+            >
+              Remove from policy
+            </button>
+          </li>
+        ))}
       </ul>
       <FieldErrors errors={errorsAt('models')} />
     </Section>

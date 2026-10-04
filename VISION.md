@@ -188,6 +188,15 @@ Gateway — wybór providera zależy od treści body, a odpowiedź wymaga przeks
 kontraktu, co w kontrolerze jest prostsze i mniej ryzykowne niż ręczne przepisywanie URI/body na
 poziomie filtrów Gateway. Inne route'y (np. do sidecara) mogą nadal być deklaratywne.
 
+Historia rozmowy jest czyszczona po stronie serwera (`ConversationGuard`), bo klienci (Playground,
+Codex CLI) wysyłają ją przy każdym pytaniu w wersji surowej, a Codex dopisuje do niej nawet
+zablokowane prompty. O akcji żądania decyduje tylko bieżący element (ostatni prompt użytkownika;
+dla agenta wyniki narzędzi po ostatnim wywołaniu modelu). Historia nie zmienia akcji, ale model nigdy
+nie dostaje jej surowej treści: redakcja jest stosowana, a treść, którą guard by zablokował, zastępuje
+`[removed by LLMinator: <guard>]`. Mechanizm jest bezstanowy. Wyniki guardów są cache'owane w pamięci
+(klucz: hash polityki + etap + SHA-256 treści, LRU, TTL 30 min), bez wyników niepewnych
+(błąd guarda, fail-closed/fail-open). Cache to tylko optymalizacja: serwer zawsze sam liczy hash treści.
+
 Kontrole deterministyczne to beany `Guard` (`backend/.../guard`) spięte w łańcuch `GuardChain`,
 wołany z kontrolera przed (`INPUT`) i po (`OUTPUT`) wywołaniu modelu. Włączane i parametryzowane
 w `control-layer.guards` (`application.yml`); guard bez wpisu jest wyłączony. Instrukcja:

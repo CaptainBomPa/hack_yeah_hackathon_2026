@@ -30,4 +30,7 @@ public interface AuditEventRepository extends JpaRepository<AuditEvent, Long>, J
 
     @Query("select distinct e.blockedBy from AuditEvent e where e.blockedBy is not null order by e.blockedBy")
     List<String> distinctBlockedBy();
+
+    @Query("select e.controls from AuditEvent e where e.action = 'redact' order by e.seq desc")
+    List<String> redactControls(Pageable pageable);
 }

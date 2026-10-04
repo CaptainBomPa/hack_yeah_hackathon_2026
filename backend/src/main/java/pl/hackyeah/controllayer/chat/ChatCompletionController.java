@@ -29,6 +29,7 @@ import pl.hackyeah.controllayer.chat.upstream.UpstreamModelException;
 import pl.hackyeah.controllayer.guard.GuardChain;
 import pl.hackyeah.controllayer.guard.GuardChainResult;
 import pl.hackyeah.controllayer.guard.GuardChainResult.Action;
+import pl.hackyeah.controllayer.guard.ConversationGuard;
 import pl.hackyeah.controllayer.guard.GuardContext;
 import pl.hackyeah.controllayer.guard.Stage;
 import pl.hackyeah.controllayer.model.ModelCatalog;
@@ -61,6 +62,7 @@ public class ChatCompletionController {
     private final ModelAccessPolicy modelAccessPolicy;
     private final OllamaChatClient upstreamClient;
     private final GuardChain guardChain;
+    private final ConversationGuard conversationGuard;
     private final AuditLog auditLog;
     private final AuditProperties auditProperties;
     private final PolicySource policySource;
@@ -73,6 +75,7 @@ public class ChatCompletionController {
         this.modelAccessPolicy = modelAccessPolicy;
         this.upstreamClient = upstreamClient;
         this.guardChain = guardChain;
+        this.conversationGuard = new ConversationGuard(guardChain);
         this.auditLog = auditLog;
         this.auditProperties = auditProperties;
         this.policySource = policySource;
@@ -218,7 +221,7 @@ public class ChatCompletionController {
                             .doOnNext(response -> execution.upstreamFinished(tokensToCharge(response, budget.reservedTokens())))
                             .flatMap(response -> execution.reconcile(tokensToCharge(response, budget.reservedTokens()))
                                     .flatMap(usedAfter -> Mono.fromCallable(() -> buildResponse(
-                                                    policy, requestId, input.action(), response, trace,
+                                                    policy, requestId, input, response, trace,
                                                     budget.toUsage(usedAfter)))
                                             .subscribeOn(Schedulers.boundedElastic())))
                             .doOnNext(entity -> log.info("requestId={} model={} action={} latencyMs={}",
@@ -274,28 +277,38 @@ public class ChatCompletionController {
                 .map(role -> new Caller(authentication.getName(), role));
     }
 
-    /** Guardy INPUT dla każdej wiadomości (historia też może zawierać dane wrażliwe). */
+    /**
+     * Guardy INPUT dla rozmowy ({@link ConversationGuard}). Bieżący jest ostatni prompt użytkownika —
+     * tylko on może zablokować żądanie albo nadać mu akcję redact. Historia (także wcześniejsze,
+     * zablokowane prompty bez odpowiedzi) jest czyszczona po stronie serwera: redakcja albo placeholder.
+     */
     private InputCheck guardInput(ActivePolicy policy, String requestId, List<ChatMessage> messages) {
-        var guarded = new ArrayList<ChatMessage>();
-        var trace = new ArrayList<ControlTrace>();
-        var action = Action.ALLOW;
-        for (ChatMessage message : messages) {
-            GuardChainResult result =
-                    guardChain.run(policy, Stage.INPUT, new GuardContext(requestId, message.content(), null, null));
-            trace.addAll(result.trace());
-            if (result.blocked()) {
-                return new InputCheck(Action.BLOCK, result.blockedBy(), messages, trace);
+        int current = messages.size() - 1;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if ("user".equals(messages.get(i).role())) {
+                current = i;
+                break;
             }
-            if (result.action() == Action.REDACT) {
-                action = Action.REDACT;
-            }
-            guarded.add(new ChatMessage(message.role(), result.text()));
         }
-        return new InputCheck(action, null, guarded, trace);
+        var items = new ArrayList<ConversationGuard.Item>(messages.size());
+        for (int i = 0; i < messages.size(); i++) {
+            items.add(new ConversationGuard.Item(messages.get(i).content(), i == current));
+        }
+        var result = conversationGuard.check(policy, requestId, items);
+        if (result.blocked()) {
+            return new InputCheck(Action.BLOCK, result.blockedBy(), messages, result.trace(), null);
+        }
+        var guarded = new ArrayList<ChatMessage>(messages.size());
+        for (int i = 0; i < messages.size(); i++) {
+            guarded.add(new ChatMessage(messages.get(i).role(), result.texts().get(i)));
+        }
+        String prompt = messages.get(current).content();
+        String sent = result.texts().get(current);
+        return new InputCheck(result.action(), null, guarded, result.trace(), sent.equals(prompt) ? null : sent);
     }
 
     /** Guardy OUTPUT na odpowiedzi modelu i złożenie końcowej odpowiedzi gatewaya. */
-    private ResponseEntity<GuardedChatResponse> buildResponse(ActivePolicy policy, String requestId, Action inputAction,
+    private ResponseEntity<GuardedChatResponse> buildResponse(ActivePolicy policy, String requestId, InputCheck input,
             OpenAiChatCompletionResponse response, List<ControlTrace> trace, BudgetUsage budgetUsage) {
         ChatMessage reply = extractMessage(response);
         GuardChainResult output =
@@ -308,13 +321,15 @@ public class ChatCompletionController {
 
         var message = new ChatMessage(reply.role(), output.text());
         Usage usage = extractUsage(response);
-        boolean redacted = inputAction == Action.REDACT || output.action() == Action.REDACT;
-        return ResponseEntity.ok(redacted
+        boolean redacted = input.action() == Action.REDACT || output.action() == Action.REDACT;
+        var body = redacted
                 ? GuardedChatResponse.redact(requestId, message, usage, trace, budgetUsage)
-                : GuardedChatResponse.allow(requestId, message, usage, trace, budgetUsage));
+                : GuardedChatResponse.allow(requestId, message, usage, trace, budgetUsage);
+        return ResponseEntity.ok(body.withRedactedPrompt(input.redactedPrompt()));
     }
 
-    private record InputCheck(Action action, String blockedBy, List<ChatMessage> messages, List<ControlTrace> trace) {}
+    private record InputCheck(Action action, String blockedBy, List<ChatMessage> messages, List<ControlTrace> trace,
+            String redactedPrompt) {}
 
     private static ChatMessage extractMessage(OpenAiChatCompletionResponse response) {
         return response.choices().getFirst().message();

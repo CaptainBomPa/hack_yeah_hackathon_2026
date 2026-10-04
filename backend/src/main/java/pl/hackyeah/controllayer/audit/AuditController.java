@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import pl.hackyeah.controllayer.chat.ControlTrace;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import tools.jackson.databind.json.JsonMapper;
@@ -28,6 +29,9 @@ import tools.jackson.databind.json.JsonMapper;
 @RestController
 @RequestMapping("/api/audit")
 public class AuditController {
+
+    private static final int MAX_REASON_SCAN = 5000;
+    private static final String HISTORY_POLICY = "input.history";
 
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
@@ -49,12 +53,13 @@ public class AuditController {
             @RequestParam(required = false) List<String> principal,
             @RequestParam(required = false) List<String> model,
             @RequestParam(required = false) List<String> blockedBy,
+            @RequestParam(required = false) List<String> reason,
             @RequestParam(required = false) String sessionId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
             @RequestParam(required = false) Long before,
             @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit) {
-        var query = new AuditQuery(action, principal, model, blockedBy, sessionId, from, to, before);
+        var query = new AuditQuery(action, principal, model, blockedBy, reason, sessionId, from, to, before);
         int size = Math.clamp(limit, 1, MAX_LIMIT);
         return blocking(() -> {
             var page = repository.findAll(query.toSpecification(),
@@ -69,10 +74,20 @@ public class AuditController {
     @GetMapping("/facets")
     public Mono<Facets> facets() {
         return blocking(() -> new Facets(repository.distinctActions(), repository.distinctPrincipals(),
-                repository.distinctModels(), repository.distinctBlockedBy()));
+                repository.distinctModels(), repository.distinctBlockedBy(), reasons()));
     }
 
-    public record Facets(List<String> actions, List<String> principals, List<String> models, List<String> blockedBy) {}
+    public record Facets(List<String> actions, List<String> principals, List<String> models, List<String> blockedBy,
+            List<String> reasons) {}
+
+    /** Wartości filtra `reason`: blokujące kontrole + kontrole, które redagowały (z ostatnich rekordów redact). */
+    private List<String> reasons() {
+        var redacting = repository.redactControls(PageRequest.of(0, MAX_REASON_SCAN)).stream()
+                .flatMap(controls -> auditService.parseControls(controls).stream())
+                .filter(t -> "redact".equals(t.action()) && !HISTORY_POLICY.equals(t.policy()))
+                .map(ControlTrace::policy);
+        return Stream.concat(repository.distinctBlockedBy().stream(), redacting).distinct().sorted().toList();
+    }
 
     @GetMapping("/events/{requestId}")
     public Mono<ResponseEntity<AuditEventView>> event(@PathVariable String requestId) {
@@ -93,11 +108,12 @@ public class AuditController {
             @RequestParam(required = false) List<String> principal,
             @RequestParam(required = false) List<String> model,
             @RequestParam(required = false) List<String> blockedBy,
+            @RequestParam(required = false) List<String> reason,
             @RequestParam(required = false) String sessionId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
         boolean asJson = "json".equals(format.toLowerCase(Locale.ROOT));
-        var query = new AuditQuery(action, principal, model, blockedBy, sessionId, from, to, null);
+        var query = new AuditQuery(action, principal, model, blockedBy, reason, sessionId, from, to, null);
         return blocking(() -> {
             List<AuditEventView> events = repository.findAll(query.toSpecification(),
                             PageRequest.of(0, MAX_EXPORT, Sort.by(Sort.Direction.ASC, "seq")))

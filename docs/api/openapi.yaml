@@ -342,6 +342,14 @@ components:
           nullable: true
           description: Nazwa kontroli, która odrzuciła żądanie. Null, gdy `action` = `allow` lub `redact`.
           example: policy.model-access
+        redactedPrompt:
+          type: string
+          nullable: true
+          description: >-
+            Ostatni prompt użytkownika po redakcji guardów INPUT. Null, gdy nic nie zredagowano.
+            Tylko do wyświetlenia — klient wysyła historię w wersji surowej. Wcześniejsze wiadomości
+            (wszystko przed ostatnim promptem użytkownika) są sprawdzane z cache i nie zmieniają `action`; opisuje je jeden
+            wpis trace `input.history`. Treść historii, którą guard by zablokował, zastępuje `[removed by LLMinator: <guard>]`.
         trace:
           type: array
           items:

@@ -62,6 +62,8 @@ export interface GuardedChatResponse {
   budget?: ChatBudget | null // zużycie dziennego budżetu roli; brak = backend go jeszcze nie wysyłał
   policyVersion?: number | string | null // wersja polityki, która podjęła decyzję (GuardedChatResponse.java)
   policyHash?: string | null
+  /** Ostatni prompt użytkownika po redakcji (null = bez zmian). Klient wysyła go w historii zamiast oryginału. */
+  redactedPrompt?: string | null
   status?: TechStatus
   latency?: { totalMs: number; upstreamMs?: number }
   shadow?: { policyVersion: string; action: GuardAction; blockedBy?: string | null }
@@ -109,6 +111,8 @@ export interface AuditFilters {
   principal?: string[]
   model?: string[]
   blockedBy?: string[]
+  /** Kontrola, która zablokowała albo zredagowała żądanie. */
+  reason?: string[]
   sessionId?: string
 }
 
@@ -118,6 +122,7 @@ export interface AuditFacets {
   principals: string[]
   models: string[]
   blockedBy: string[]
+  reasons: string[]
 }
 
 /** GET /api/audit/verify — AuditService.VerifyResult. */
