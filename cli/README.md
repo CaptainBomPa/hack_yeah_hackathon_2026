@@ -4,6 +4,10 @@ Node >=20, Windows/macOS/Linux. The Java gateway is the enforcement layer; this 
 Codex with a gateway provider for one child process. It never edits Codex configuration,
 login files, shell profiles, registry environment variables or PATH.
 
+**Standalone package** (unzip anywhere, no repository needed): `node cli/pack.mjs` builds
+`build/llminator-codex.zip` with the launcher, a demo starter, fictional demo data and short
+instructions (source: [`package/`](package/)).
+
 This adapter uses your **existing ChatGPT subscription login**, not OpenAI API-key billing.
 Run `codex login` if needed. The launcher checks `codex login status`, requires ChatGPT auth,
 keeps the original `CODEX_HOME` and lets Codex use/refresh its native file or keyring credentials.

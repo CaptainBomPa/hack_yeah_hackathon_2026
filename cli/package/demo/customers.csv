@@ -1,0 +1,7 @@
+id;first_name;last_name;pesel;email;phone;city;account_status
+1;Jan;Kowalski;44051401359;jan.kowalski@example.com;+48 501 234 567;Warszawa;active
+2;Anna;Nowak;85010112345;anna.nowak@example.com;+48 602 345 678;Kraków;active
+3;Piotr;Wiśniewski;92072304562;piotr.wisniewski@example.com;+48 703 456 789;Gdańsk;suspended
+4;Katarzyna;Wójcik;78110507821;katarzyna.wojcik@example.com;+48 504 567 890;Poznań;active
+5;Tomasz;Kamiński;01220903216;tomasz.kaminski@example.com;+48 605 678 901;Wrocław;closed
+6;Magdalena;Lewandowska;67033009187;magdalena.lewandowska@example.com;+48 706 789 012;Łódź;active
