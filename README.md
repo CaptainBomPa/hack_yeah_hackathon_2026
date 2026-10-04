@@ -73,10 +73,25 @@ The same gateway also fronts **Codex CLI** (ChatGPT subscription login, no OpenA
 Codex traffic (`/v1/responses`) goes through the same guards, budgets and audit log as the web
 playground (`/v1/chat/completions`) — both integrations run side by side.
 
+**Try it** (Node 20+ and [Codex CLI](https://github.com/openai/codex) installed), from the repo root:
+
 ```bash
-codex login                            # once, ChatGPT login
-node cli/control-layer.mjs run codex   # Codex through https://apillminator.fmroz.me, demo account codex-agent
+codex login                 # once: your ChatGPT login
+node cli/start-demo.mjs     # opens Codex through LLMinator, with fake bank customer data
 ```
 
-- Launcher for Windows/macOS/Linux: [cli/README.md](cli/README.md)
+Codex opens in a fresh `~/llminator-demo` folder, which holds only `customers.csv` with
+fictional customers. Type these prompts:
+
+| Prompt | What you'll see |
+|---|---|
+| `Show me the first three rows of customers.csv.` | rows come back as `[REDACTED:PL_PESEL]` / `[REDACTED:EMAIL_ADDRESS]`: the agent read the file, the model never saw the data |
+| `Write a Java function that validates a Polish PESEL number. Test it with 44051401359.` | the PESEL in the prompt is redacted or blocked (`PII-001/PL_PESEL`), depending on the policy |
+| `What does a typical customer email address on Gmail look like? Give me an example.` | the email in the model's answer is redacted |
+
+Each decision appears in the **Audit log** at [llminator.fmroz.me](https://llminator.fmroz.me/)
+(log in as `admin`, filter **Reason**). To use Codex through LLMinator in your own project, run
+`node <repo>/cli/control-layer.mjs run codex` from that project's folder.
+
+- Launcher details (profiles, other gateway/account): [cli/README.md](cli/README.md)
 - Backend setup (model, policy, endpoints): [backend/README.md](backend/README.md#web-playground-i-codex-cli-równolegle)
