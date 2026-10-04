@@ -1,5 +1,7 @@
-import type { ChatBudget, ControlTrace, GuardedChatResponse } from '../api/types'
+import type { ChatBudget, GuardedChatResponse } from '../api/types'
+import { formatMs, sharePct, summarizeLatency, type LatencyRow, type LatencySummary } from '../lib/latency'
 import ActionBadge, { StatusDot } from './ActionBadge'
+import ControlPathView from './ControlPathView'
 import { SpanHighlight } from './HighlightedText'
 import { redactedBy } from '../lib/decision'
 
@@ -21,9 +23,12 @@ interface Props {
 /** Explainable Verdict / Security X-ray (VISION.md §5 E): ścieżka kontroli, sygnały, akcja, latencja. */
 export default function DecisionXray({ response, clientLatencyMs, userText, onReason }: Props) {
   const redacting = redactedBy(response.action, response.trace)
-  const controlsMs = response.trace.reduce((sum, t) => sum + t.latencyMs, 0)
-  const totalMs = response.latency?.totalMs ?? clientLatencyMs
-  const upstreamMs = response.latency?.upstreamMs
+  // totalMs z gatewaya jest dokładniejszy niż pomiar w przeglądarce (bez narzutu sieci i renderu).
+  const timing = summarizeLatency(
+    response.trace,
+    response.latency?.totalMs ?? clientLatencyMs,
+    response.latency?.upstreamMs ?? undefined,
+  )
   const spans = response.trace.flatMap((t) => t.spans ?? [])
 
   return (
@@ -97,20 +102,21 @@ export default function DecisionXray({ response, clientLatencyMs, userText, onRe
         </section>
       )}
 
-      <LatencyBreakdown trace={response.trace} totalMs={totalMs} upstreamMs={upstreamMs} controlsMs={controlsMs} />
+      <TimingPanel timing={timing} />
 
-      <section>
-        <h4 className="mb-1 text-xs uppercase text-slate-500">Control path ({response.trace.length})</h4>
-        <ol className="space-y-2">
-          {response.trace.map((t, i) => (
-            <TraceItem key={`${t.policy}-${i}`} trace={t} />
-          ))}
-        </ol>
-      </section>
+      {/* Ścieżkę kontroli rysuje ControlPathView: grupuje wpisy per etap i kontrolę, bo guardy
+          INPUT lecą raz na każdą wiadomość i płaska lista rosła z historią rozmowy. */}
+      <ControlPathView
+        trace={response.trace}
+        action={response.action}
+        blockedBy={response.blockedBy}
+        upstreamMs={timing.upstreamMs}
+      />
     </div>
   )
 }
 
+/** Nazwa kontroli jako powód decyzji; klikalna, gdy rodzic umie filtrować audyt po `reason`. */
 function Reason({ policy, className, onReason }: { policy: string; className: string; onReason?: (policy: string) => void }) {
   if (!onReason) return <code className={className}>{policy}</code>
   return (
@@ -120,86 +126,99 @@ function Reason({ policy, className, onReason }: { policy: string; className: st
   )
 }
 
-function TraceItem({ trace: t }: { trace: ControlTrace }) {
-  const degraded = t.status && t.status !== 'ok'
-  return (
-    <li className={`rounded border p-2 ${degraded ? 'border-amber-700/60 bg-amber-950/20' : 'border-slate-800 bg-slate-800/40'}`}>
-      <div className="flex items-center justify-between gap-2">
-        <code className="truncate">{t.policy}</code>
-        <ActionBadge action={t.action} />
-      </div>
-      <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-400">
-        <span>{t.kind === 'semantic' ? 'semantic' : 'deterministic'}</span>
-        {t.stage && <span>{t.stage === 'input' ? 'input' : 'output'}</span>}
-        {t.mode && <span>mode: {t.mode}</span>}
-        <span>{t.latencyMs} ms</span>
-        {t.provider && <span>provider: {t.provider}</span>}
-        {t.status && <StatusDot status={t.status} />}
-      </div>
-      {t.confidence !== undefined && (
-        <ConfidenceBar confidence={t.confidence} threshold={t.threshold} />
-      )}
-      {t.detail && <p className="mt-1 text-xs text-slate-300">{t.detail}</p>}
-    </li>
-  )
+const KIND_COLOR: Record<string, string> = {
+  deterministic: 'bg-sky-400',
+  semantic: 'bg-violet-400',
+  model: 'bg-slate-400',
+  other: 'bg-slate-600',
 }
 
-function ConfidenceBar({ confidence, threshold }: { confidence: number; threshold?: number }) {
-  const pct = Math.round(confidence * 100)
-  const over = threshold !== undefined && confidence >= threshold
-  return (
-    <div className="mt-1.5">
-      <div className="relative h-1.5 rounded bg-slate-700">
-        <div className={`h-1.5 rounded ${over ? 'bg-red-400' : 'bg-emerald-400'}`} style={{ width: `${pct}%` }} />
-        {threshold !== undefined && (
-          <div className="absolute -top-0.5 h-2.5 w-0.5 bg-slate-200" style={{ left: `${threshold * 100}%` }} />
-        )}
-      </div>
-      <p className="mt-0.5 text-xs text-slate-400">
-        confidence {pct}%{threshold !== undefined && ` · threshold ${Math.round(threshold * 100)}%`}
-      </p>
-    </div>
-  )
-}
-
-function LatencyBreakdown({
-  trace,
-  totalMs,
-  upstreamMs,
-  controlsMs,
-}: {
-  trace: ControlTrace[]
-  totalMs?: number
-  upstreamMs?: number
-  controlsMs: number
-}) {
+/**
+ * Gdzie poszedł czas żądania: jeden pasek z podziałem na kontrole / model / resztę, a pod nim
+ * kontrole zagregowane per polityka (guardy INPUT lecą raz na każdą wiadomość, więc bez
+ * agregacji lista rośnie z historią rozmowy i nic z niej nie wynika).
+ */
+function TimingPanel({ timing }: { timing: LatencySummary }) {
+  const { totalMs, controlsMs, deterministicMs, semanticMs, upstreamMs, restMs, restLabel, scaleMs, rows, slowest } =
+    timing
   if (totalMs === undefined || totalMs <= 0) return null
-  // Bez upstreamMs z gatewaya nie wiemy, ile zajął sam model — pokazujemy resztę uczciwie jako "model + sieć".
-  const restMs = Math.max(totalMs - controlsMs - (upstreamMs ?? 0), 0)
-  const rows = [
-    ...trace.map((t) => ({ label: t.policy, ms: t.latencyMs, color: t.kind === 'semantic' ? 'bg-violet-400' : 'bg-sky-400' })),
-    ...(upstreamMs !== undefined ? [{ label: 'model (Ollama)', ms: upstreamMs, color: 'bg-slate-400' }] : []),
-    { label: upstreamMs !== undefined ? 'other' : 'model + network', ms: restMs, color: 'bg-slate-600' },
-  ].filter((r) => r.ms > 0)
+
+  const segments = [
+    { key: 'deterministic', label: 'deterministic checks', ms: deterministicMs, kind: 'deterministic' },
+    { key: 'semantic', label: 'semantic checks', ms: semanticMs, kind: 'semantic' },
+    ...(upstreamMs !== undefined ? [{ key: 'model', label: 'protected model', ms: upstreamMs, kind: 'model' }] : []),
+    { key: 'rest', label: restLabel, ms: restMs, kind: 'other' },
+  ].filter((s) => s.ms > 0)
 
   return (
     <section>
-      <h4 className="mb-1 text-xs uppercase text-slate-500">
-        Latency: {totalMs} ms · controls {controlsMs} ms
-      </h4>
-      <div className="space-y-1">
-        {rows.map((r, i) => (
-          <div key={i} className="grid grid-cols-[8rem_1fr_3.5rem] items-center gap-2 text-xs">
-            <span className="truncate text-slate-400" title={r.label}>
-              {r.label}
-            </span>
-            <div className="h-2 rounded bg-slate-800">
-              <div className={`h-2 rounded ${r.color}`} style={{ width: `${Math.max((r.ms / totalMs) * 100, 1)}%` }} />
-            </div>
-            <span className="text-right text-slate-400">{r.ms} ms</span>
-          </div>
+      <h4 className="mb-1 text-xs uppercase text-slate-500">Timing</h4>
+      <p className="mb-2 text-slate-200">
+        {formatMs(totalMs)} total{' '}
+        <span className="text-slate-400">
+          · checks {formatMs(controlsMs)} ({sharePct(controlsMs, scaleMs)}%)
+        </span>
+      </p>
+
+      {/* Etykiety i liczby są w legendzie pod paskiem — kolor nigdy nie jest jedynym nośnikiem informacji.
+          Proporcje przez flex-grow, nie przez width w %: segment krótszy niż piksel i tak jest widoczny
+          (minWidth), a pasek nigdy nie przekracza 100% i nie ucina ostatniej pozycji. */}
+      <div className="flex h-2.5 overflow-hidden rounded bg-slate-800" role="presentation">
+        {segments.map((s) => (
+          <div
+            key={s.key}
+            className={KIND_COLOR[s.kind]}
+            style={{ flexGrow: s.ms, flexBasis: 0, minWidth: '2px' }}
+            title={`${s.label}: ${formatMs(s.ms)}`}
+          />
         ))}
       </div>
+      <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
+        {segments.map((s) => (
+          <li key={s.key} className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 shrink-0 rounded-sm ${KIND_COLOR[s.kind]}`} aria-hidden="true" />
+            <span>
+              {s.label} {formatMs(s.ms)}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {rows.length > 0 && (
+        <div className="mt-3 space-y-1">
+          {rows.map((r) => (
+            <ControlTimingRow key={r.key} row={r} scaleMs={scaleMs} />
+          ))}
+        </div>
+      )}
+
+      {slowest && rows.length > 1 && (
+        <p className="mt-2 text-xs text-slate-500">
+          Slowest check: <code className="text-slate-400">{slowest.label}</code> — {formatMs(slowest.ms)}
+          {slowest.calls > 1 && ` across ${slowest.calls} calls`}.
+        </p>
+      )}
     </section>
+  )
+}
+
+function ControlTimingRow({ row, scaleMs }: { row: LatencyRow; scaleMs: number }) {
+  const pct = sharePct(row.ms, scaleMs)
+  return (
+    <div className="grid grid-cols-[9rem_1fr_4.5rem] items-center gap-2 text-xs">
+      <span className="truncate text-slate-300" title={row.label}>
+        {row.label}
+      </span>
+      <div className="flex items-center gap-2">
+        <div className="h-1.5 min-w-0 flex-1 rounded bg-slate-800">
+          <div className={`h-1.5 rounded ${KIND_COLOR[row.kind]}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="shrink-0 text-slate-500">
+          {row.stage ?? 'gate'}
+          {row.calls > 1 && ` ×${row.calls}`}
+        </span>
+      </div>
+      <span className="text-right text-slate-400">{formatMs(row.ms)}</span>
+    </div>
   )
 }

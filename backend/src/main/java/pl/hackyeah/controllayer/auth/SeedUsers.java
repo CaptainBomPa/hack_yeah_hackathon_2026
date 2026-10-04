@@ -1,17 +1,19 @@
 package pl.hackyeah.controllayer.auth;
 
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
-import pl.hackyeah.controllayer.policy.PolicySource;
+import pl.hackyeah.controllayer.policy.PolicyStore;
 
 /**
  * Zakłada konta z `config/users.yaml` przy starcie, jeśli ich jeszcze nie ma. Idempotentne:
- * istniejące loginy nie są nadpisywane. Rola spoza polityki przerywa start, bo takie konto
- * nie miałoby żadnego dostępu i błąd byłby trudny do zauważenia.
+ * istniejące loginy nie są nadpisywane. Rola, której brakuje w polityce w bazie (np. nowa rola po
+ * wdrożeniu na istniejącą bazę), jest dopisywana z policy.yaml ({@link PolicyStore#ensureRoles});
+ * rola nieznana także tam przerywa start, bo takie konto nie miałoby żadnego dostępu.
  */
 @Component
 class SeedUsers implements ApplicationRunner {
@@ -21,10 +23,10 @@ class SeedUsers implements ApplicationRunner {
     private final SeedUsersProperties seed;
     private final AppUserRepository users;
     private final PasswordEncoder passwordEncoder;
-    private final PolicySource policy;
+    private final PolicyStore policy;
 
     SeedUsers(SeedUsersProperties seed, AppUserRepository users, PasswordEncoder passwordEncoder,
-            PolicySource policy) {
+            PolicyStore policy) {
         this.seed = seed;
         this.users = users;
         this.passwordEncoder = passwordEncoder;
@@ -36,11 +38,8 @@ class SeedUsers implements ApplicationRunner {
         if (!seed.enabled()) {
             return;
         }
+        policy.ensureRoles(seed.users().stream().map(SeedUsersProperties.SeedUser::role).collect(Collectors.toSet()));
         for (SeedUsersProperties.SeedUser user : seed.users()) {
-            if (!policy.current().document().roles().containsKey(user.role())) {
-                throw new IllegalStateException("konto startowe '" + user.login() + "': rola '" + user.role()
-                        + "' nie istnieje w policy.roles");
-            }
             if (users.findByLogin(user.login()).isPresent()) {
                 continue;
             }

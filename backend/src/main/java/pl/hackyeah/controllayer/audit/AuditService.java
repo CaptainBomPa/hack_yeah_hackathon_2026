@@ -100,9 +100,11 @@ public class AuditService implements AuditLog {
 
     private AuditEntry sanitized(AuditEntry e) {
         int max = properties.maxFieldLength();
+        // confidence/threshold to liczby z detektora, nie dane od klienta — nie ma czego sanitizować.
         List<ControlTrace> trace = e.trace() == null ? null : e.trace().stream()
                 .map(t -> new ControlTrace(AuditSanitizer.sanitize(t.policy(), max), t.kind(), t.action(),
-                        t.latencyMs(), AuditSanitizer.sanitize(t.detail(), max)))
+                        t.latencyMs(), AuditSanitizer.sanitize(t.detail(), max), t.stage(),
+                        t.confidence(), t.threshold()))
                 .toList();
         // Milisekundy: tyle bez straty przechowa każda baza, a hash liczony jest z epoch millis.
         return new AuditEntry(e.requestId(), e.occurredAt().truncatedTo(ChronoUnit.MILLIS),

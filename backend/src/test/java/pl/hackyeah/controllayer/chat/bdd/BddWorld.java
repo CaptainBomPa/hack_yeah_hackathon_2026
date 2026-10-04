@@ -1,5 +1,10 @@
 package pl.hackyeah.controllayer.chat.bdd;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,6 +40,7 @@ import pl.hackyeah.controllayer.guard.GuardProperties;
 import pl.hackyeah.controllayer.guard.pii.PiiRecognizerGuard;
 import pl.hackyeah.controllayer.guard.secrets.SecretGuard;
 import pl.hackyeah.controllayer.guard.semantic.SemanticGuard;
+import pl.hackyeah.controllayer.guard.signature.SignatureFeedGuard;
 import pl.hackyeah.controllayer.guard.semantic.SidecarClient;
 import pl.hackyeah.controllayer.guard.semantic.SidecarProperties;
 import pl.hackyeah.controllayer.model.ModelCatalog;
@@ -82,6 +88,9 @@ public class BddWorld {
     private PolicyStore policyStore;
 
     public BddWorld() {
+        // First in the chain (order 40), matching application.yml — it must see the text before
+        // any other guard redacts/rewrites it.
+        guardRules.put("SIG-FEED", new GuardProperties.Rule(true, 40, Map.of()));
         guardRules.put("PII-RECOGNIZERS", new GuardProperties.Rule(true, 100, Map.of()));
         guardRules.put("SEC-GITLEAKS", new GuardProperties.Rule(true, 150, Map.of()));
         // PolicyValidator requires an "admin" role to exist in every policy document, including
@@ -201,6 +210,46 @@ public class BddWorld {
     public void setSemanticTimeoutMs(int timeoutMs) {
         enableSemanticGuard();
         guardRules.compute("SEM-001", (id, existing) -> withParam(existing, "timeoutMs", timeoutMs));
+    }
+
+    // ---- SIG-FEED: a real file on disk, so hot-reload/fail-closed/missing-file behaviour can be
+    // exercised for real — SignatureFeedLoader reads an actual Path, not a classpath resource.
+
+    private Path signatureFeedPath;
+    private long signatureFeedMtimeOffsetMs;
+
+    /** Points SIG-FEED at a throwaway file instead of the real config/signatures/active.yaml. */
+    public void useCustomSignatureFeed(String yaml) {
+        try {
+            signatureFeedPath = Files.createTempFile("bdd-signature-feed", ".yaml");
+            Files.writeString(signatureFeedPath, yaml);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        // checkIntervalMs=0: every current() call re-stats the file, so a test never has to sleep
+        // past a throttle window to observe a change — see SignatureFeedLoader#current().
+        guardRules.put("SIG-FEED", new GuardProperties.Rule(true, 40,
+                Map.of("feed", signatureFeedPath.toString(), "checkIntervalMs", 0)));
+    }
+
+    /** Overwrites the custom feed file with new content and forces a strictly later mtime. */
+    public void updateSignatureFeedFile(String yaml) {
+        try {
+            Files.writeString(signatureFeedPath, yaml);
+            signatureFeedMtimeOffsetMs += 1000;
+            Files.setLastModifiedTime(signatureFeedPath,
+                    FileTime.fromMillis(System.currentTimeMillis() + signatureFeedMtimeOffsetMs));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    public void deleteSignatureFeedFile() {
+        try {
+            Files.deleteIfExists(signatureFeedPath);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /** Merges one param into an existing (pre-controller) guard rule without disturbing the rest. */
@@ -410,6 +459,7 @@ public class BddWorld {
         List<Guard> guards = new ArrayList<>();
         guards.add(new PiiRecognizerGuard(guardProperties, new DefaultResourceLoader()));
         guards.add(new SecretGuard());
+        guards.add(new SignatureFeedGuard());
         if (guardRules.containsKey("SEM-001")) {
             String sidecarUrl = realSidecarUrl != null ? realSidecarUrl
                     : sidecarDown || fakeSidecar == null ? "http://localhost:1" : fakeSidecar.url();
@@ -516,6 +566,13 @@ public class BddWorld {
         }
         if (fakeSidecar != null) {
             fakeSidecar.stop();
+        }
+        if (signatureFeedPath != null) {
+            try {
+                Files.deleteIfExists(signatureFeedPath);
+            } catch (IOException ignored) {
+                // best-effort cleanup of a scenario-scoped temp file
+            }
         }
     }
 }

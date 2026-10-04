@@ -89,7 +89,7 @@ public class SemanticGuard implements Guard {
 
         var top = ok.stream().max((a, b) -> Double.compare(a.score(), b.score()));
         if (top.isPresent() && top.get().score() >= threshold) {
-            return new Verdict.Block(format(top.get(), threshold));
+            return new Verdict.Block(format(top.get(), threshold), signal(top.get(), threshold));
         }
         if (response.results().isEmpty()) {
             return failure("no semantic coverage for this input (sidecar returned no results)", failClosed);
@@ -100,15 +100,21 @@ public class SemanticGuard implements Guard {
                     .collect(Collectors.joining(","));
             return failure("incomplete semantic check (" + missing + ")", failClosed);
         }
-        return Verdict.allow(format(top.get(), threshold));
+        return new Verdict.Allow(format(top.get(), threshold), signal(top.get(), threshold));
     }
 
     private static Verdict failure(String reason, boolean failClosed) {
+        // Bez sygnału: awaria providera nie ma wyniku, więc UI nie ma czego rysować na pasku.
         return failClosed
                 ? new Verdict.Block(reason + " (fail-closed)")
                 : Verdict.allow(reason + " (fail-open)");
     }
 
+    private static Verdict.Signal signal(SidecarResponse.DetectorResult result, double threshold) {
+        return new Verdict.Signal(result.score(), threshold);
+    }
+
+    /** Czytelny dla człowieka ślad do audytu i eksportu CSV; liczby jadą osobno w {@link Verdict.Signal}. */
     private static String format(SidecarResponse.DetectorResult result, double threshold) {
         return String.format(Locale.ROOT, "%s score=%.4f threshold=%.4f", result.detector(), result.score(), threshold);
     }

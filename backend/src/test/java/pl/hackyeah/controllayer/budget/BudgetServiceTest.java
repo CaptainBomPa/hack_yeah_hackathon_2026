@@ -89,6 +89,17 @@ class BudgetServiceTest {
     }
 
     @Test
+    void booksUsageOfARoleWithoutDailyLimitSoTheDashboardSeesIt() {
+        assertTrue(service.reserve("admin", null, 999_999_999).block().allowed());
+        assertEquals(120L, service.reconcile("admin", null, 999_999_999, 120).block());
+        assertEquals(150L, service.reconcile("admin", null, 999_999_999, 30).block());
+
+        var usage = service.todayUsageByRole().get("admin");
+        assertEquals(150, usage.usedTokens());
+        assertEquals(0, usage.reservedTokens());
+    }
+
+    @Test
     void twoDifferentRolesHaveIndependentBudgets() {
         service.reserve("chat", 1000L, 1000).block();
         BudgetReservation chatExhausted = service.reserve("chat", 1000L, 1).block();

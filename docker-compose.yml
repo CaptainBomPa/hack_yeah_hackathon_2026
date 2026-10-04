@@ -30,6 +30,9 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      WEB_INTEGRATION_ENABLED: ${WEB_INTEGRATION_ENABLED:-true}
+      CODEX_INTEGRATION_ENABLED: ${CODEX_INTEGRATION_ENABLED:-true}
+      CODEX_UPSTREAM_BASE_URL: ${CODEX_UPSTREAM_BASE_URL:-https://chatgpt.com/backend-api/codex}
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/hackyeah
       SPRING_DATASOURCE_USERNAME: hackyeah
       SPRING_DATASOURCE_PASSWORD: hackyeah

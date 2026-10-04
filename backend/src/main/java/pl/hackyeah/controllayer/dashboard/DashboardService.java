@@ -125,7 +125,9 @@ public class DashboardService {
             buckets.computeIfAbsent(bucketStart, k -> zeroByAction()).merge(action, 1L, Long::sum);
 
             for (ControlTrace t : auditService.traceOf(e)) {
-                if (!"allow".equals(t.action())) {
+                // `off` to informacja o kontroli wyłączonej w polityce, nie jej trafienie —
+                // wliczone podbijałoby "top controls" tym, co w ogóle się nie wykonało.
+                if (ControlTrace.isHit(t.action())) {
                     controlHits.merge(t.policy() + "\u0000" + t.action(), 1L, Long::sum);
                 }
             }

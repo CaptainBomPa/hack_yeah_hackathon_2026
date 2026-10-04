@@ -1,0 +1,22 @@
+name: Cross-platform CLI tests
+on:
+  push:
+    paths: ['cli/**', '.github/workflows/cli-tests.yml']
+  pull_request:
+    paths: ['cli/**', '.github/workflows/cli-tests.yml']
+jobs:
+  cli:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        codex: ['0.155.0', '0.159.3']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --prefix "${{ runner.temp }}/codex-probe" --no-save --package-lock=false @openai/codex@${{ matrix.codex }}
+      - run: node --test cli/control-layer.test.mjs cli/codex-protocol.test.mjs
+        env:
+          CL_CODEX_TEST_ENTRY: ${{ runner.temp }}/codex-probe/node_modules/@openai/codex/bin/codex.js

@@ -53,11 +53,33 @@ public class BudgetService {
      * (`GuardedChatResponse.budget`).
      */
     Mono<Long> reconcile(String role, Long dailyLimit, long reservedTokens, long actualTokens) {
-        if (dailyLimit == null || reservedTokens == 0) {
+        if (dailyLimit == null) {
+            // Rola bez limitu nic nie rezerwuje, ale zużycie i tak księgujemy — inaczej dashboard
+            // ("Token budget — today") pokazywałby 0 dla ról bez limitu.
+            if (actualTokens <= 0) {
+                return Mono.just(0L);
+            }
+            return Mono.fromCallable(() -> bookUnlimitedBlocking(subjectOf(role), actualTokens))
+                    .subscribeOn(Schedulers.boundedElastic());
+        }
+        if (reservedTokens == 0) {
             return Mono.just(0L);
         }
         return Mono.fromCallable(() -> reconcileBlocking(subjectOf(role), reservedTokens, actualTokens))
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private long bookUnlimitedBlocking(String subject, long actualTokens) {
+        LocalDate today = LocalDate.now();
+        ensureRowExists(subject, today);
+        jdbcTemplate.update(
+                "UPDATE budget_counter SET used_tokens = used_tokens + ? "
+                        + "WHERE subject = ? AND period_kind = ? AND period_start = ?",
+                actualTokens, subject, PERIOD_KIND, today);
+        Long usedTokens = jdbcTemplate.queryForObject(
+                "SELECT used_tokens FROM budget_counter WHERE subject = ? AND period_kind = ? AND period_start = ?",
+                Long.class, subject, PERIOD_KIND, today);
+        return usedTokens == null ? actualTokens : usedTokens;
     }
 
     private BudgetReservation reserveBlocking(String subject, long dailyLimit, long tokensToReserve) {

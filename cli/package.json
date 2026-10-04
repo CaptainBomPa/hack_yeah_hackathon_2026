@@ -1,0 +1,9 @@
+{
+  "name": "@ai-control-layer/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "bin": { "control-layer": "control-layer.mjs" },
+  "scripts": { "test": "node --test" }
+}

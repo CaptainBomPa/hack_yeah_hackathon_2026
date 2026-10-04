@@ -1,0 +1,763 @@
+[
+  {
+    "name": "native tools and reasoning are retained",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "hello"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "shell",
+          "parameters": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "reasoning": {
+        "effort": "low"
+      }
+    },
+    "status": 200,
+    "calls": 1
+  },
+  {
+    "name": "blocked input never reaches provider",
+    "request": {
+      "model": "test-model",
+      "input": "BLOCK-ME"
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "policy.input-blocked",
+    "stage": "input",
+    "guard": "TEST-GUARD"
+  },
+  {
+    "name": "redacted input reaches provider safely",
+    "request": {
+      "model": "test-model",
+      "input": "PRIVATE-VALUE"
+    },
+    "status": 200,
+    "calls": 1,
+    "redacted": true
+  },
+  {
+    "name": "unlisted model denied",
+    "request": {
+      "model": "other-model",
+      "input": "hello"
+    },
+    "status": 403,
+    "calls": 0,
+    "code": "policy.model-access"
+  },
+  {
+    "name": "hidden history denied",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "previous_response_id": "resp_old"
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "integration.unsupported-input"
+  },
+  {
+    "name": "images denied",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_image",
+              "image_url": "https://example.com/private.png"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "integration.unsupported-input"
+  },
+  {
+    "name": "background denied",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "background": true
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "integration.unsupported-input"
+  },
+  {
+    "name": "hosted tools denied",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "tools": [
+        {
+          "type": "web_search"
+        }
+      ]
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "integration.unsupported-input"
+  },
+  {
+    "name": "missing ChatGPT credentials denied",
+    "request": {
+      "model": "test-model",
+      "input": "hello"
+    },
+    "oauth": "",
+    "status": 401,
+    "calls": 0,
+    "code": "integration.chatgpt-auth-required"
+  },
+  {
+    "name": "json output can be redacted",
+    "request": {
+      "model": "test-model",
+      "input": "hello"
+    },
+    "output": "PRIVATE-VALUE",
+    "status": 200,
+    "calls": 1,
+    "redacted": true
+  },
+  {
+    "name": "audit failure is fail closed",
+    "request": {
+      "model": "test-model",
+      "input": "hello"
+    },
+    "auditDown": true,
+    "status": 503,
+    "calls": 1,
+    "code": "audit.write"
+  },
+  {
+    "name": "native SSE is returned after checks",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "stream": true
+    },
+    "status": 200,
+    "calls": 1
+  },
+  {
+    "name": "output redaction blocks buffered SSE",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "stream": true
+    },
+    "output": "PRIVATE-VALUE",
+    "status": 400,
+    "calls": 1,
+    "code": "policy.output-blocked",
+    "stage": "output",
+    "guard": "TEST-GUARD"
+  },
+  {
+    "name": "split secret in provisional SSE is blocked",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "stream": true
+    },
+    "splitSecret": true,
+    "status": 400,
+    "calls": 1,
+    "code": "policy.output-blocked",
+    "stage": "output",
+    "guard": "TEST-GUARD"
+  },
+  {
+    "name": "truncated SSE denied",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "stream": true
+    },
+    "truncated": true,
+    "status": 502,
+    "calls": 1,
+    "code": "upstream.unavailable"
+  },
+  {
+    "name": "untrusted upstream error not reflected",
+    "request": {
+      "model": "test-model",
+      "input": "hello"
+    },
+    "upstreamStatus": 500,
+    "status": 500,
+    "calls": 1,
+    "code": "upstream.rejected"
+  },
+  {
+    "name": "API keys cannot select pay-as-you-go billing",
+    "request": {
+      "model": "test-model",
+      "input": "hello"
+    },
+    "oauth": "Bearer sk-test-api-key",
+    "status": 401,
+    "calls": 0,
+    "code": "integration.chatgpt-auth-required"
+  },
+  {
+    "name": "account header is required",
+    "request": {
+      "model": "test-model",
+      "input": "hello"
+    },
+    "account": "",
+    "status": 401,
+    "calls": 0,
+    "code": "integration.chatgpt-auth-required"
+  },
+  {
+    "name": "expired OAuth keeps 401 so Codex can refresh",
+    "request": {
+      "model": "test-model",
+      "input": "hello"
+    },
+    "upstreamStatus": 401,
+    "status": 401,
+    "calls": 1,
+    "code": "upstream.authentication"
+  },
+  {
+    "name": "subscription quota keeps 429 and retry metadata",
+    "request": {
+      "model": "test-model",
+      "input": "hello"
+    },
+    "upstreamStatus": 429,
+    "status": 429,
+    "calls": 1,
+    "code": "upstream.rate-limit"
+  },
+  {
+    "name": "actual subscription output limit is enforced",
+    "request": {
+      "model": "test-model",
+      "input": "hello"
+    },
+    "outputTokens": 101,
+    "status": 429,
+    "calls": 1,
+    "code": "budget.output_limit"
+  },
+  {
+    "name": "native compaction uses the same guarded pipeline",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "type": "compaction",
+          "encrypted_content": "opaque-state"
+        },
+        {
+          "role": "user",
+          "content": "hello"
+        }
+      ]
+    },
+    "operation": "responses/compact",
+    "status": 200,
+    "calls": 1
+  },
+  {
+    "name": "native Codex namespace tools are retained",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "tools": [
+        {
+          "type": "namespace",
+          "name": "multi_agent_v1",
+          "description": "Native tool group",
+          "tools": [
+            {
+              "type": "function",
+              "name": "wait_agent",
+              "description": "Wait for a result",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "status": 200,
+    "calls": 1
+  },
+  {
+    "name": "namespace tool descriptions are guarded",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "tools": [
+        {
+          "type": "namespace",
+          "name": "group",
+          "tools": [
+            {
+              "type": "function",
+              "name": "tool",
+              "description": "BLOCK-ME"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "policy.input-blocked",
+    "stage": "input",
+    "guard": "TEST-GUARD"
+  },
+  {
+    "name": "provisional added SSE text is checked even if absent from final response",
+    "request": {
+      "model": "test-model",
+      "input": "hello",
+      "stream": true
+    },
+    "addedSecret": true,
+    "status": 400,
+    "calls": 1,
+    "code": "policy.output-blocked",
+    "stage": "output",
+    "guard": "TEST-GUARD"
+  },
+  {
+    "name": "native additional tools are retained",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "type": "additional_tools",
+          "role": "developer",
+          "tools": [
+            {
+              "type": "namespace",
+              "name": "functions",
+              "tools": [
+                {
+                  "type": "function",
+                  "name": "shell",
+                  "description": "Run a command",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {}
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "hello"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 200,
+    "calls": 1
+  },
+  {
+    "name": "additional tool descriptions pass through input redaction",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "type": "additional_tools",
+          "role": "developer",
+          "tools": [
+            {
+              "type": "namespace",
+              "name": "functions",
+              "tools": [
+                {
+                  "type": "function",
+                  "name": "shell",
+                  "description": "PRIVATE-VALUE",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {}
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "hello"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 200,
+    "calls": 1,
+    "redacted": true
+  },
+  {
+    "name": "additional tool descriptions cannot bypass input guards",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "type": "additional_tools",
+          "role": "developer",
+          "tools": [
+            {
+              "type": "namespace",
+              "name": "functions",
+              "tools": [
+                {
+                  "type": "function",
+                  "name": "shell",
+                  "description": "BLOCK-ME",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {}
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "hello"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "policy.input-blocked",
+    "stage": "input",
+    "guard": "TEST-GUARD"
+  },
+  {
+    "name": "hosted tools inside additional tools are rejected",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "type": "additional_tools",
+          "role": "developer",
+          "tools": [
+            {
+              "type": "namespace",
+              "name": "hosted",
+              "tools": [
+                {
+                  "type": "web_search"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "hello"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "integration.unsupported-input"
+  },
+  {
+    "name": "additional tools require an array",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "type": "additional_tools",
+          "role": "developer",
+          "tools": {
+            "type": "function"
+          }
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "hello"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "integration.unsupported-input"
+  },
+  {
+    "name": "blocked prompt left in Codex history does not block the next turn",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "BLOCK-ME please"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "hello again"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 200,
+    "calls": 1,
+    "upstreamContains": [
+      "[removed by LLMinator: TEST-GUARD]",
+      "hello again"
+    ],
+    "upstreamNotContains": [
+      "BLOCK-ME"
+    ]
+  },
+  {
+    "name": "redacted history is cleaned but does not make the next turn redact",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "my PRIVATE-VALUE"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "ok"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "hello again"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 200,
+    "calls": 1,
+    "upstreamContains": [
+      "my [REDACTED]"
+    ]
+  },
+  {
+    "name": "new prompt is still blocked with history present",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "hello"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "ok"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "BLOCK-ME now"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "policy.input-blocked",
+    "stage": "input",
+    "guard": "TEST-GUARD"
+  },
+  {
+    "name": "tool output after the model call is current and blocks",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "run it"
+            }
+          ]
+        },
+        {
+          "type": "function_call",
+          "call_id": "c1",
+          "name": "shell",
+          "arguments": "{\"command\":\"cat\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "c1",
+          "output": "BLOCK-ME from a file"
+        }
+      ]
+    },
+    "status": 400,
+    "calls": 0,
+    "code": "policy.input-blocked",
+    "stage": "input",
+    "guard": "TEST-GUARD"
+  },
+  {
+    "name": "blocked tool output from an earlier turn is replaced, not blocking",
+    "request": {
+      "model": "test-model",
+      "input": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "run it"
+            }
+          ]
+        },
+        {
+          "type": "function_call",
+          "call_id": "c1",
+          "name": "shell",
+          "arguments": "{\"command\":\"cat\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "c1",
+          "output": "BLOCK-ME from a file"
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "done"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "thanks, next task"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 200,
+    "calls": 1,
+    "upstreamContains": [
+      "[removed by LLMinator: TEST-GUARD]",
+      "\"call_id\":\"c1\""
+    ],
+    "upstreamNotContains": [
+      "BLOCK-ME"
+    ]
+  }
+]

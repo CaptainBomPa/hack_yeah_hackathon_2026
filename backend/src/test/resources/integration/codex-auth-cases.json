@@ -1,0 +1,7 @@
+[
+  {"name":"OAuth alone does not authenticate the gateway","status":401,"calls":0},
+  {"name":"wrong gateway password denied","password":"wrong","status":401,"calls":0},
+  {"name":"gateway login cannot replace OAuth","password":"gateway-password","oauth":"","status":401,"calls":0},
+  {"name":"subscription OAuth forwarded after gateway login","password":"gateway-password","status":200,"calls":1},
+  {"name":"next request uses its own OAuth","password":"gateway-password","oauth":"Bearer subscription-two","status":200,"calls":1}
+]

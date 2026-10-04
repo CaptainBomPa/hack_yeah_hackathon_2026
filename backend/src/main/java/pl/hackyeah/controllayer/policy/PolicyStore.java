@@ -3,7 +3,9 @@ package pl.hackyeah.controllayer.policy;
 import jakarta.annotation.PostConstruct;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.TreeMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -106,6 +108,38 @@ public class PolicyStore implements PolicySource {
         active.set(saved);
         log.info("policy activated version={} hash={} author={} source={}", saved.version(), saved.hash(), author, source);
         return saved;
+    }
+
+    /**
+     * Dopisuje do aktywnej polityki role z policy.yaml, których w niej brakuje — np. nowa rola po wdrożeniu
+     * na bazę z polityką sprzed jej dodania (policy.yaml wczytuje się tylko do pustej bazy). Razem z rolą
+     * trafiają na allowlistę jej modele. Istniejące role i ustawienia admina zostają nietknięte; zmiana to
+     * zwykła nowa wersja (autor "system", widoczna w historii). Rola nieznana także w policy.yaml = wyjątek.
+     */
+    public synchronized void ensureRoles(Set<String> needed) {
+        PolicyDocument current = active.get().document();
+        List<String> missing = needed.stream().filter(role -> !current.roles().containsKey(role)).sorted().toList();
+        if (missing.isEmpty()) {
+            return;
+        }
+        PolicyDocument config = PolicyDocument.fromConfig(seedPolicy, catalog, seedGuards, seedLimits);
+        List<String> unknown = missing.stream().filter(role -> !config.roles().containsKey(role)).toList();
+        if (!unknown.isEmpty()) {
+            throw new IllegalStateException("roles " + unknown + " are not defined in policy.yaml (policy.roles)");
+        }
+        var roles = new TreeMap<>(current.roles());
+        var models = new ArrayList<>(current.models());
+        for (String role : missing) {
+            PolicyDocument.RolePolicy rolePolicy = config.roles().get(role);
+            roles.put(role, rolePolicy);
+            for (String tag : rolePolicy.models()) {
+                if (!tag.equals(PolicyDocument.ANY_MODEL) && models.stream().noneMatch(m -> m.tag().equals(tag))) {
+                    models.add(new PolicyDocument.ModelPolicy(tag, true));
+                }
+            }
+        }
+        apply(new PolicyDocument(roles, models, current.guards(), current.limits(), current.rateLimit()),
+                null, "system", "config", "added roles from policy.yaml: " + String.join(", ", missing));
     }
 
     /** Przywrócenie starej wersji = nowa wersja z jej treścią (historia nie jest przepisywana). */

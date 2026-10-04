@@ -1,6 +1,5 @@
 package pl.hackyeah.controllayer.chat;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -37,33 +36,38 @@ public class ChatExecutionGate {
             long startedAt, List<ChatMessage> messages, List<ControlTrace> trace,
             Function<Execution, Mono<ResponseEntity<GuardedChatResponse>>> operation) {
         return Mono.defer(() -> {
+            // ControlTrace.latencyMs to czas własny kontroli, więc admisja i rezerwacja budżetu
+            // mierzą się same, a nie od startu żądania (inaczej suma po trace zawyża koszt kontroli).
+            long admissionStartedAt = System.nanoTime();
             var acquisition = rateLimitGate.acquire(snapshot, login, role, requestId).cache();
             return Mono.usingWhen(Mono.just(acquisition),
-                    pending -> pending.flatMap(permit -> executeAdmitted(
-                            snapshot, login, role, requestId, startedAt, messages, trace, permit, operation)),
+                    pending -> pending.flatMap(permit -> executeAdmitted(snapshot, login, role, requestId,
+                            startedAt, admissionStartedAt, messages, trace, permit, operation)),
                     this::releaseAcquisition, (pending, error) -> releaseAcquisition(pending), this::releaseAcquisition);
         });
     }
 
     private Mono<ResponseEntity<GuardedChatResponse>> executeAdmitted(ActivePolicy snapshot, String login, String role, String requestId,
-            long startedAt, List<ChatMessage> messages, List<ControlTrace> trace, Permit permit,
+            long startedAt, long admissionStartedAt, List<ChatMessage> messages, List<ControlTrace> trace, Permit permit,
             Function<Execution, Mono<ResponseEntity<GuardedChatResponse>>> operation) {
         var decision = permit.decision();
         String policy = decision.reason() == null ? "rate.requests" : decision.reason();
         trace.add(new ControlTrace(policy, "deterministic", permit.traceAction(),
-                elapsedMillis(startedAt), decision.reason()));
+                ControlTrace.elapsedMs(admissionStartedAt), decision.reason()));
         if (!decision.allowed()) {
             return Mono.just(ResponseEntity.status("rate.store".equals(policy) ? 503 : 429)
                     .header("Retry-After", Long.toString(decision.retryAfterSeconds()))
                     .header("Cache-Control", "no-store")
                     .body(GuardedChatResponse.block(requestId, policy, trace)));
         }
-        return withBudget(snapshot, login, role, requestId, startedAt, messages, trace, permit, operation)
+        return withBudget(snapshot, login, role, requestId, messages, trace, permit, operation)
                 .timeout(permit.limits().pipelineTimeout())
                 .onErrorResume(java.util.concurrent.TimeoutException.class, error -> {
                     var timedOut = new ArrayList<>(trace);
+                    // Deadline pipeline'u: jego "czas własny" to czas, po którym się poddaliśmy,
+                    // czyli liczony od startu żądania — tak samo jak pipeline.availability.
                     timedOut.add(new ControlTrace("rate.pipeline-timeout", "deterministic", "block",
-                            elapsedMillis(startedAt), "pipeline deadline exceeded"));
+                            ControlTrace.elapsedMs(startedAt), "pipeline deadline exceeded"));
                     return Mono.just(ResponseEntity.status(503).header("Retry-After", "1")
                             .body(GuardedChatResponse.block(requestId, "rate.pipeline-timeout", timedOut)));
                 });
@@ -74,13 +78,14 @@ public class ChatExecutionGate {
     }
 
     private Mono<ResponseEntity<GuardedChatResponse>> withBudget(ActivePolicy snapshot, String login, String role, String requestId,
-            long startedAt, List<ChatMessage> messages, List<ControlTrace> trace, Permit permit,
+            List<ChatMessage> messages, List<ControlTrace> trace, Permit permit,
             Function<Execution, Mono<ResponseEntity<GuardedChatResponse>>> operation) {
         // Own the lifecycle before starting the database reservation. Cancellation cleanup
         // awaits the same acquisition, including a result delivered after cancellation.
+        long budgetStartedAt = System.nanoTime();
         return Mono.usingWhen(Mono.fromSupplier(() -> new Execution(snapshot, role, messages, permit)),
                 execution -> execution.acquisition.flatMap(budget -> {
-                    trace.add(budget.toTrace(elapsedMillis(startedAt)));
+                    trace.add(budget.toTrace(ControlTrace.elapsedMs(budgetStartedAt)));
                     if (!budget.allowed()) {
                         log.info("requestId={} caller={} role={} action=block blockedBy={}",
                                 requestId, login, role, budget.blockedBy());
@@ -138,7 +143,4 @@ public class ChatExecutionGate {
         }
     }
 
-    private static long elapsedMillis(long startedAtNanos) {
-        return Duration.ofNanos(System.nanoTime() - startedAtNanos).toMillis();
-    }
 }

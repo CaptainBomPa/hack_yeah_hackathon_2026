@@ -1,5 +1,6 @@
 import { redactedBy } from '../lib/decision'
 import { AuthRequiredError, LoginError, PolicyConflictError, PolicyInvalidError, type ChatParams } from './client'
+import { isHit } from '../lib/controlPath'
 import { newId } from '../lib/id'
 import type {
   AuditEvent,
@@ -56,10 +57,10 @@ function spansOf(text: string, re: RegExp, label: string): TextSpan[] {
 export function chat({ model, messages, signal }: ChatParams): Promise<GuardedChatResponse> {
   const last = messages[messages.length - 1]?.content ?? ''
   const requestId = newId()
+  // Bez `stage`: allowlista modelu bramkuje całe żądanie, nie jest guardem etapu (ControlTrace.java).
   const allowlist: ControlTrace = {
     policy: 'model.allowlist',
     kind: 'deterministic',
-    stage: 'input',
     mode: 'block',
     action: 'allow',
     latencyMs: 1,
@@ -77,6 +78,7 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
         trace: [{ ...allowlist, action: 'block', detail: `model not allowed: ${model}` }],
         usage: null,
         ...POLICY,
+        latency: { totalMs: 2 },
       },
       150,
       signal,
@@ -105,6 +107,16 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
     threshold: 0.8,
     status: 'ok',
     provider: 'mock-local',
+  }
+  // Kontrola wyłączona w polityce: GuardChain.java dokłada taki wpis do każdego etapu, w którym
+  // guard by działał, żeby wyłączenie było widoczne w X-ray (VISION.md §4).
+  const toolsOff: ControlTrace = {
+    policy: 'tools.allowlist',
+    kind: 'deterministic',
+    stage: 'input',
+    action: 'off',
+    latencyMs: 0,
+    detail: 'disabled in policy',
   }
 
   if (/ignore (all )?previous instructions|zignoruj (wszystkie )?poprzednie/i.test(last)) {
@@ -144,6 +156,7 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
         trace: [
           allowlist,
           { ...pii, action: 'redact', detail: `${pesel.length} × PESEL (suma kontrolna OK)`, spans: pesel },
+          toolsOff,
           semantic,
           { ...pii, policy: 'pii.output', stage: 'output', latencyMs: 1 },
         ],
@@ -214,7 +227,7 @@ export function chat({ model, messages, signal }: ChatParams): Promise<GuardedCh
       action: 'allow',
       blockedBy: null,
       message: { role: 'assistant', content: `(mock) Model ${model} answer to: "${last}"` },
-      trace: [allowlist, pii, semantic, { ...pii, policy: 'pii.output', stage: 'output', latencyMs: 1 }],
+      trace: [allowlist, pii, semantic, toolsOff, { ...pii, policy: 'pii.output', stage: 'output', latencyMs: 1 }],
       usage: { promptTokens: 12, completionTokens: 24 },
       budget: nextMockBudget(),
       ...POLICY,
@@ -251,7 +264,8 @@ export function dashboard(window: DashboardWindow): Promise<DashboardData> {
     prompt += e.usage?.promptTokens ?? 0
     completion += e.usage?.completionTokens ?? 0
     if (e.action !== 'block') latencies.push(e.latencyMs)
-    for (const t of e.trace) if (t.action !== 'allow') controls.set(`${t.policy}|${t.action}`, (controls.get(`${t.policy}|${t.action}`) ?? 0) + 1)
+    // isHit: `off` to kontrola wyłączona w polityce, nie jej trafienie — jak w DashboardService.java.
+    for (const t of e.trace) if (isHit(t.action)) controls.set(`${t.policy}|${t.action}`, (controls.get(`${t.policy}|${t.action}`) ?? 0) + 1)
     const blocked = e.action === 'block' ? 1 : 0
     if (e.model) {
       const s = models.get(e.model) ?? { requests: 0, blocked: 0, tokens: 0 }
@@ -296,7 +310,9 @@ const MOCK_AUDIT: AuditEvent[] = Array.from({ length: 120 }, (_, i) => {
     ...(kind === 4
       ? [{ policy: 'policy.model-access', kind: 'deterministic' as const, action: 'block' as const, latencyMs: 0, detail: 'role agent may not use model qwen2.5:0.5b' }]
       : []),
-    ...(kind === 1 ? [{ policy: 'PII-001', kind: 'deterministic' as const, action: 'redact' as const, latencyMs: 1, detail: '1 PESEL' }] : []),
+    ...(kind === 1
+      ? [{ policy: 'PII-001', kind: 'deterministic' as const, stage: 'input' as const, action: 'redact' as const, latencyMs: 1, detail: '1 PESEL' }]
+      : []),
   ]
   return {
     seq,

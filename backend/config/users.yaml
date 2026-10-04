@@ -6,7 +6,7 @@
 # UWAGA: hasła są jawne, słabe i publiczne (repo, README). Służą wyłącznie do demo i testów.
 # Wdrożenie produkcyjne: ustaw enabled: false, a konta twórz przez scripts/add-user.sh.
 #
-# Role muszą istnieć w backend/config/policy.yaml (policy.roles): admin, chat, agent.
+# Role muszą istnieć w backend/config/policy.yaml (policy.roles): admin, chat, agent, codex.
 control-layer:
   seed:
     enabled: true
@@ -34,3 +34,9 @@ control-layer:
       - login: agent-sdk
         password: agent-sdk
         role: agent
+
+      # codex: konto dla Codex CLI (cli/control-layer.mjs install codex --user codex-agent),
+      # modele z policy.roles.codex. Hasło podaje się w CL_GATEWAY_PASSWORD.
+      - login: codex-agent
+        password: codex-agent-123
+        role: codex

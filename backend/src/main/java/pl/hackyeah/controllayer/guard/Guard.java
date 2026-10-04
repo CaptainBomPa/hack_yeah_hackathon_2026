@@ -26,4 +26,14 @@ public interface Guard {
 
     /** Sprawdza `ctx.text()`. Wyjątek jest traktowany jak {@link Verdict.Block} (fail-closed). */
     Verdict check(GuardContext ctx, GuardSettings settings);
+
+    /**
+     * {@code false} dla guardów, których wynik może się zmienić dla tej samej (polityka, tekst)
+     * bez zmiany polityki — np. {@code SIG-FEED}, który hot-reloaduje plik z dysku niezależnie od
+     * polityki. {@link GuardChain#runCached} nigdy nie cache'uje wyniku etapu, na którym działa
+     * taki guard, żeby jego hot-reload faktycznie obowiązywał od następnego żądania.
+     */
+    default boolean cacheable() {
+        return true;
+    }
 }

@@ -100,6 +100,14 @@ Kandydaci na biblioteki i sposób ich oceny są opisani wyłącznie w
 Każda kontrola zwraca wspólny `ControlResult`: identyfikator polityki, wynik, proponowaną akcję,
 pewność, krótki powód i czas wykonania. Java agreguje wyniki według aktywnej wersji polityki.
 
+Czas wykonania jest **czasem własnym pojedynczej kontroli**, nie znacznikiem czasu w pipeline:
+tylko wtedy suma po kontrolach odpowiada na pytanie „ile kosztuje warstwa kontroli”, a Explainable
+Verdict (§5 E) może uczciwie rozdzielić koszt bramki od czasu chronionego modelu. Odpowiedź
+gatewaya podaje obok tego czas całego żądania i czas modelu (`latency.totalMs`,
+`latency.upstreamMs`), bo bez nich UI musiałby zgadywać resztę z pomiaru w przeglądarce. Wpis
+kontroli należącej do łańcucha guardów nosi też swój etap (`input`, `output`, `tool_call`);
+kontrole bramkujące samo żądanie (allowlista modelu, budżet, audyt) etapu nie mają.
+
 Każda kontrola ma próg oraz tryb z polityki:
 
 | Tryb | Zachowanie |
@@ -173,6 +181,66 @@ hashy i bezpiecznych fragmentów. Eksport CSV/JSON musi zachowywać te same zasa
 
 ## 7. API i routing
 
+### Integracje: web i Codex równolegle
+
+Integracje `web` i `codex` działają jednocześnie w jednym procesie, niezależnie od profilu
+bazy `local`/`prod`. Każdą można wyłączyć flagą (`control-layer.integration.web-enabled` /
+`codex-enabled`, env `WEB_INTEGRATION_ENABLED` / `CODEX_INTEGRATION_ENABLED`, domyślnie obie
+`true`). Web: playground woła `/v1/chat/completions`, a backend model w Ollamie. Codex proxy’uje natywny ruch
+abonamentowego Codex CLI do `https://chatgpt.com/backend-api/codex`: `POST /v1/responses`,
+`POST /v1/responses/compact` i `GET /v1/models`. Nie używa klucza OpenAI API ani płatnego
+API jako fallbacku. Konfiguracja upstreamu dopuszcza wyłącznie ten backend ChatGPT lub loopback
+na potrzeby testów. Klient zachowuje OAuth i identyfikator konta; gateway przekazuje je wyłącznie
+w obrębie bieżącego żądania. Nie utrwala ich w konfiguracji, bazie ani logach. Odświeżaniem OAuth
+zarządza sam Codex. Statusy upstreamu, w tym 401 i 429, wracają z bezpiecznym komunikatem,
+bez kopiowania treści błędów. Katalog modeli zachowuje natywne metadane, filtrując modele
+według aktywnej polityki i uprawnień roli.
+
+Codex CLI jest klientem podpiętym przez custom provider, nie pluginem MCP. Wieloplatformowy
+launcher Node (`cli/control-layer.mjs`, Node >=20) ustawia provider argumentami procesu,
+`requires_openai_auth=true` i `forced_login_method=chatgpt`; przed uruchomieniem sprawdza
+`codex login status`. Korzysta z istniejącego magazynu logowania Codexa (plik/keyring),
+bez odczytywania lub kopiowania `auth.json` przez launcher. Poświadczenie konta gatewaya
+przekazuje tylko procesowi potomnemu jako osobny nagłówek `X-Control-Layer-Authorization`.
+`Authorization` pozostaje nagłówkiem OAuth. Backend używa osobnego, bezstanowego łańcucha
+Spring Security dla trzech endpointów Codexa; OAuth nie uwierzytelnia konta gatewaya.
+
+Profil instalowany jest w katalogu konfiguracji Control Layer, bez zmian w configu Codexa,
+PATH ani konfiguracji powłoki. `disable` uruchamia oryginalnego Codexa; `uninstall` usuwa
+tylko nasz profil. Oryginalna konfiguracja, także zmieniona po instalacji, pozostaje nienaruszona.
+Sekret gatewaya pochodzi z credential helpera albo process-local env; nie zapisujemy go
+w profilu. Windows/macOS/Linux korzystają z tego samego launchera. Obie integracje wykorzystują
+te same polityki, guardy, budżety i audyt. Modele Codexa (slugi z katalogu ChatGPT, plik
+`codex-models.yml`) są w katalogu obok modeli Ollamy; które z nich wolno używać, decyduje polityka.
+Zmiana flag wymaga restartu. Listę aktywnych
+integracji zwraca chronione adminem `GET /api/integration`.
+
+Adapter Codex buforuje SSE do zakończenia generacji i kontroli OUTPUT oraz audytu.
+Blokady treści INPUT/OUTPUT zwracają 400, brak uprawnień do modelu 403, brak uwierzytelnienia
+401, limity budżetu 429 (rozmiar wejścia 413), a niedostępna kontrola fail-closed 503.
+HTTP 400 zatrzymuje automatyczne ponawianie tury w Codex CLI 0.159.3; HTTP 422 jest ponawiane.
+Błąd zawiera request ID, wersję polityki, etap, identyfikator guarda, bezpieczny kod powodu
+i klasy wykrytych danych (np. `PII-001/PL_PESEL`), bez surowej treści ani pełnego trace.
+Dozwolony stream wraca w natywnym formacie, wraz z dozwolonymi nagłówkami routingu i limitów.
+Redakcja OUTPUT w SSE powoduje blokadę całej odpowiedzi, aby nie ujawnić danych rozbitych
+między deltami. Odpowiedzi JSON mogą być redagowane. Adapter obsługuje tekst,
+function/custom tool calls (także w namespace), definicje narzędzi w `input.additional_tools`
+(Codex CLI 0.159.3) oraz w głównym `tools`, reasoning oraz kompaktowanie. Obie lokalizacje
+definicji podlegają tej samej walidacji i kontroli INPUT. Odrzuca multimodalne wejście,
+ukrytą historię przez `previous_response_id`/`conversation` i tryb background. WebSocket
+jest wyłączony w providerze launchera. Hosted web search jest wyłączony w tej integracji;
+pełna kontrola lokalnego wykonania narzędzi i aplikacja desktopowa pozostają rozszerzeniami.
+
+Backend abonamentowy nie przyjmuje API-owego `max_output_tokens`: nie dokładamy tego pola
+ani innych API-owych parametrów do natywnego żądania. Budżet robi kontrolę wejścia i rezerwację
+przed generacją, rozlicza natywne usage po generacji, a odpowiedź przekraczającą limit wyjścia
+blokuje. Nie jest to gwarancja zatrzymania generacji po dokładnej liczbie tokenów.
+Nieznane zużycie po awarii upstreamu zachowuje konserwatywną rezerwację; odrzucenia 4xx
+przed generacją zwalniają rezerwację. Liczymy tokeny, nie cenę per token ruchu abonamentowego.
+Integrację weryfikują testy backendu z atrapą ChatGPT oraz rzeczywisty Codex CLI 0.155.0
+z fikcyjnym logowaniem i lokalną atrapą. Test na prawdziwym koncie wymaga istniejącego
+logowania ChatGPT, konta gatewaya oraz dopuszczenia modelu w aktywnej polityce.
+
 Wejściem dla playgroundu jest zgodny z OpenAI endpoint `POST /v1/chat/completions`, wzbogacony
 o identyfikator żądania i trace kontroli. API dashboardu korzysta z `/api/**`. Kontrakt
 zaimplementowanych endpointów (OpenAPI 3.0): [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
@@ -196,6 +264,17 @@ nie dostaje jej surowej treści: redakcja jest stosowana, a treść, którą gua
 `[removed by LLMinator: <guard>]`. Mechanizm jest bezstanowy. Wyniki guardów są cache'owane w pamięci
 (klucz: hash polityki + etap + SHA-256 treści, LRU, TTL 30 min), bez wyników niepewnych
 (błąd guarda, fail-closed/fail-open). Cache to tylko optymalizacja: serwer zawsze sam liczy hash treści.
+
+Kontrakt `ControlTrace` niesie poza akcją i latencją trzy pola pod Explainable Verdict. `stage`
+(`input`/`output`/`tool_call`, `null` dla bramek żądania) oraz `confidence` i `threshold` — wynik
+detektora i próg blokady z polityki, w tej samej skali 0-1. Sygnał semantyczny jest **liczbą w
+kontrakcie**, nie tekstem w `detail`: inaczej zmiana progu w polityce nie daje się pokazać w UI,
+a CRITERIA §6 zakłada, że jurorzy progi ruszają. Kontrole bez wyniku liczbowego (deterministyczne,
+awaria providera) mają tu `null`. Dodatkowo `ControlTrace.action` ma wartość `off` dla kontroli
+wyłączonej albo nieskonfigurowanej w aktywnej polityce: taki wpis ma zerową latencję, nie jest
+trafieniem i nie wchodzi do statystyk kontroli, ale **musi być w `trace`** — tryb wyłączony
+pozostaje widoczny (§4), żeby brak kontroli dał się odróżnić od braku kontrolki. Konsumenci
+liczący trafienia pomijają `off` tak samo jak `allow` (`ControlTrace.isHit`).
 
 Kontrole deterministyczne to beany `Guard` (`backend/.../guard`) spięte w łańcuch `GuardChain`,
 wołany z kontrolera przed (`INPUT`) i po (`OUTPUT`) wywołaniu modelu. Włączane i parametryzowane
@@ -280,6 +359,13 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
 - dashboard: **działa e2e** — `GET /api/dashboard?window=1h|24h|7d` liczy metryki z `audit_event` (akcje, 5xx,
   latencja p50/p95, tokeny, oś czasu, top kontroli, per model/użytkownik) + budżety ról z `budget_counter`;
 - `frontend/` — Playground (czat + X-ray), Audit log i Dashboard podłączone do backendu; Polityki i Session graph jeszcze nie;
+- X-ray: **działa** — panel „Timing” (`lib/latency.ts`) rozbija czas żądania na kontrole
+  deterministyczne, semantyczne i model, a „Control path” (`lib/controlPath.ts`,
+  `ControlPathView.tsx`) składa płaski `trace` w sekcje pipeline'u i grupy per kontrola. Guardy
+  `INPUT` lecą raz na każdą wiadomość, więc lista rośnie z historią rozmowy: trafienia są widoczne
+  od razu, `allow` i `off` siedzą pod rozwinięciem, a granica wywołania modelu jest separatorem.
+  Numer wiadomości przy wpisie jest **wyliczany** z kolejności wystąpień guarda (n-te wystąpienie =
+  n-ta wiadomość); docelowo ma go dawać backend jako `messageIndex`;
 - `semantic-sidecar/` — **działa**: lokalny sidecar Python/FastAPI (port 8001) z klasyfikatorem prompt injection
   `Horizon-Labs/prompt-injection-guard-small` (Apache-2.0, 141M, kalibrowany), wołany przez guard `SEM-001`
   (próg blokady 0,9 w `application.yml`, fail-closed). Pokrywa P1, P2, P5; P3 i P4 raportuje jako brak pokrycia

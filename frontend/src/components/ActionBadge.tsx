@@ -1,22 +1,25 @@
-import type { GuardAction, TechStatus } from '../api/types'
+import type { ControlAction, TechStatus } from '../api/types'
 
-const ACTION_STYLES: Record<GuardAction, string> = {
+const ACTION_STYLES: Record<ControlAction, string> = {
   allow: 'bg-emerald-900/50 text-emerald-300',
   monitor: 'bg-sky-900/50 text-sky-300',
   redact: 'bg-amber-900/50 text-amber-300',
   require_approval: 'bg-violet-900/50 text-violet-300',
   block: 'bg-red-900/50 text-red-300',
+  // Wyłączona kontrola: neutralnie i bez obwódki, żeby nie udawała wyniku (GuardChain.java).
+  off: 'bg-slate-800 text-slate-400',
 }
 
-const ACTION_LABELS: Record<GuardAction, string> = {
+const ACTION_LABELS: Record<ControlAction, string> = {
   allow: 'allow',
   monitor: 'monitor',
   redact: 'redact',
   require_approval: 'approval',
   block: 'block',
+  off: 'off',
 }
 
-export default function ActionBadge({ action }: { action: GuardAction }) {
+export default function ActionBadge({ action }: { action: ControlAction }) {
   const style = ACTION_STYLES[action] ?? 'bg-slate-800 text-slate-300'
   return (
     <span className={`rounded px-2 py-0.5 text-xs font-medium uppercase ${style}`}>
