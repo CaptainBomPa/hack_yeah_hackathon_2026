@@ -87,3 +87,15 @@ przebiegu.
 
 Podział na trening/walidację/test i test leave-one-family-out (potrzebne dopiero przy douczaniu modelu),
 mutacje ataków, scenariusze wielotur, ablacje (system z detektorem i bez).
+
+## Duża pula testów (generator)
+
+`python -m scripts.build_test_pool` buduje ok. 3,5 tys. przypadków (ziarno 1337, powtarzalnie) do `evaluation/data/pool/` (poza gitem).
+Wymiary: rozmiar (300-20000 znaków), pozycja ataku w tekście, format (proza, kod, JSON, logi, markdown, CSV i 14 osadzeń danych), rodzina ataku,
+wariant zapisu, obfuskacja (11 rodzajów), dokumenty z wstrzyknięciem pośrednim (P2), pamięć (P5), many-shot, przypadki brzegowe Unicode.
+Ziarna: `evaluation/pool_seeds.py`. Uruchomienie: `python -m evaluation.run --inprocess --config config/semantic.models.yaml --cases evaluation/data/pool --threshold 0.9`;
+wyniki rozbija się per tag (`size:`, `pos:`, `fmt:`, `obf:`, `var:`, `doc:`, `set:`).
+
+Zastrzeżenia: przypadki są szablonowe, a etykiety wynikają z konstrukcji. Pula mierzy odporność na rozmiar, pozycję, format i obfuskację oraz regresje,
+nie uogólnianie na nowe ataki. Część „trudnych negatywów w dokumentach" jest z natury niejednoznaczna (instrukcja dla człowieka w mailu wygląda jak
+instrukcja dla AI), więc FPR na nich traktuj jako górne oszacowanie. Testy kontraktu bez modelu: `tests/test_api_edge.py`; na prawdziwym modelu: `tests/test_real_model_edge.py`.

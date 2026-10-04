@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from app.config import NormalizationConfig
 from app.contract import Checkpoint
 from app.normalize.decoders import DECODERS
-from app.normalize.deobfuscate import deleet, despace, expose_markup
+from app.normalize.deobfuscate import decase, deleet, despace, expose_markup
 from app.normalize.unicode_clean import fold_homoglyphs, strip_invisible
 
 _ENTITY = re.compile(r"&(?:#\d+|#x[0-9A-Fa-f]+|[A-Za-z]+);")
@@ -35,6 +35,7 @@ class Signals:
     html_entities: int = 0
     leet_tokens: int = 0
     spaced_runs: int = 0
+    alt_case_words: int = 0
     hidden_markup: int = 0
     html_comments: int = 0
     decoded_kinds: list[str] = field(default_factory=list)
@@ -126,6 +127,8 @@ def normalize(text: str, checkpoint: Checkpoint, cfg: NormalizationConfig) -> No
             deob, sig.spaced_runs = despace(deob)
         if cfg.deobfuscate.leet:
             deob, sig.leet_tokens = deleet(deob)
+        if cfg.deobfuscate.case:
+            deob, sig.alt_case_words = decase(deob)
         return Normalized(text, normalized, deob if deob != normalized else None, decoded, sig)
     except Exception:  # normalizacja nie może wywrócić sidecara
         sig.error = True

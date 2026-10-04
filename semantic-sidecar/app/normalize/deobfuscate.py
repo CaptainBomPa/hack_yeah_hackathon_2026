@@ -1,4 +1,4 @@
-"""Rozwijanie zapisów utrudniających czytanie: leetspeak, litery rozstrzelone, ukryty tekst w HTML/markdown."""
+"""Rozwijanie zapisów utrudniających czytanie: leetspeak, litery rozstrzelone, naprzemienna wielkość liter, ukryty tekst w HTML/markdown."""
 
 import re
 
@@ -83,3 +83,26 @@ def expose_markup(text: str) -> tuple[str, int, int]:
     if attrs:
         out += " " + " ".join(attrs)
     return re.sub(r"[ \t]{2,}", " ", out).strip(), hidden, comments
+
+
+_WORD = re.compile(r"[A-Za-z]{5,}")
+
+
+def decase(text: str) -> tuple[str, int]:
+    """Sprowadza do małych liter słowa o "poszarpanej" wielkości liter (iGnOrE, aLtErNaTiNg). Zwraca (tekst, liczba słów).
+
+    Słowo zmieniamy, gdy co najmniej połowa przejść między sąsiednimi literami zmienia wielkość (w iGnOrE są 5 na 5).
+    Zwykłe zapisy (iPhone: 1 z 5, McDonald: 2 z 7, CamelCase, WIKIPEDIA, Ignore) zostają nietknięte.
+    """
+    changed = 0
+
+    def fix(m: re.Match) -> str:
+        nonlocal changed
+        w = m.group(0)
+        flips = sum(1 for a, b in zip(w, w[1:]) if a.isupper() != b.isupper())
+        if flips * 2 >= len(w) - 1:
+            changed += 1
+            return w.lower()
+        return w
+
+    return _WORD.sub(fix, text), changed

@@ -92,6 +92,9 @@ class SemanticRunner:
         for r in results:
             if r.status != Status.OK:
                 missing.append(MissingCheck(check=r.detector, status=r.status, reason=r.reason or "unknown"))
+        for m in missing:
+            log.warning("check_missing", extra={"ctx": {"check": m.check, "status": m.status.value, "reason": m.reason,
+                                                         "checkpoint": req.checkpoint.value}})
 
         return ClassifyResponse(
             checkpoint=req.checkpoint,

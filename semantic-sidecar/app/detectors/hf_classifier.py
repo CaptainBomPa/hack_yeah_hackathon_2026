@@ -10,6 +10,7 @@ modeli to zwykle 512 tokenów), a wynik to maksimum po oknach i wariantach tekst
 import json
 import math
 import threading
+import time
 from pathlib import Path
 
 from app.calibration import PlattCalibration, load_calibration, sigmoid
@@ -36,6 +37,8 @@ class HFClassifierDetector(Detector):
         calibration: str | None = None,
         target_prior: float | None = None,
         label_threshold: float | None = None,
+        time_budget_ms: int | None = None,
+        window_batch: int = 4,
     ):
         import torch  # import leniwy: tylko ten detektor wymaga torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -44,6 +47,8 @@ class HFClassifierDetector(Detector):
         self.label = label
         self.checkpoints = frozenset(Checkpoint(c) for c in (checkpoints or ["P1", "P2", "P5"]))
         self.max_length, self.stride, self.max_windows, self.max_variants = max_length, stride, max(1, max_windows), max_variants
+        self.window_batch = max(1, window_batch)  # ile okien na jedno wywołanie modelu; po każdej porcji sprawdzamy budżet czasu
+        self.time_budget_ms = time_budget_ms  # None = bez limitu; inaczej oceniamy okna do wyczerpania budżetu i zgłaszamy niepełne `coverage`
         path = Path(model_dir)
         path = path if path.is_absolute() else ROOT / path
         if threads:
@@ -109,29 +114,73 @@ class HFClassifierDetector(Detector):
             out.append((chunk, span))
         return out, total
 
-    def margin(self, text: str) -> tuple[float, tuple[int, int] | None, float]:
-        """Maksymalny po oknach margines logitów klasy pozytywnej, zakres znaków okna, które go dało, i pokrycie tekstu."""
+    @staticmethod
+    def _spread_order(n: int) -> list[int]:
+        """Kolejność ocen okien: pierwsze, ostatnie, potem połowienie przedziałów. Przerwane w dowolnym momencie zostawia
+        okna rozłożone równomiernie po tekście (atak w środku nie jest systematycznie pomijany)."""
+        order, seen = [], set()
+        queue = [(0, n - 1)] if n > 1 else []
+        for i in ([0, n - 1] if n > 1 else [0]):
+            if i not in seen:
+                order.append(i); seen.add(i)
+        while queue:
+            lo, hi = queue.pop(0)
+            mid = (lo + hi) // 2
+            if mid not in seen:
+                order.append(mid); seen.add(mid)
+            if mid - lo > 1:
+                queue.append((lo, mid))
+            if hi - mid > 1:
+                queue.append((mid, hi))
+        return order
+
+    def margin(self, text: str, deadline: float | None = None) -> tuple[float, tuple[int, int] | None, float]:
+        """Maksymalny po oknach margines logitów klasy pozytywnej, zakres znaków okna, które go dało, i pokrycie tekstu.
+
+        `deadline` (czas `time.perf_counter()`): po jego przekroczeniu kolejne porcje okien nie są oceniane, a `coverage` maleje.
+        Pierwsza porcja jest oceniana zawsze, więc wynik zawsze istnieje."""
+        m, span, done, total = self._margin(text, deadline, force_first=True)
+        return m, span, done / total
+
+    def _margin(self, text: str, deadline: float | None, force_first: bool) -> tuple[float, tuple[int, int] | None, int, int]:
+        """(margines, zakres, liczba ocenionych okien, liczba wszystkich okien). Gdy `force_first` jest fałszem i termin minął,
+        nic nie jest oceniane (margines -inf): tak wspólny budżet nie jest łamany przez kolejne warianty tekstu."""
         wins, total = self.windows(text)
         # Okna wyznaczamy po tokenach, ale oceniamy jako podciągi tekstu: zwykłe wywołanie tokenizera dokłada tokeny specjalne
         # i dopełnienie, bez użycia metod wewnętrznych, które zmieniają się między wersjami transformers.
         pieces = [text[sp[0]:sp[1]] if sp else "" for _, sp in wins]
-        with self._lock:  # szybkie tokenizatory HF nie są bezpieczne przy współbieżnym użyciu
-            batch = self._tok(pieces, padding=True, truncation=True, max_length=self.max_length, return_tensors="pt")
-        with self._torch.inference_mode():
-            logits = self._model(**batch).logits.double()
-            others = self._torch.cat([logits[:, : self._pos], logits[:, self._pos + 1:]], dim=-1)
-            margins = logits[:, self._pos] - self._torch.logsumexp(others, dim=-1)
-        best = int(margins.argmax())
-        return float(margins[best]), wins[best][1], len(wins) / total
+        order = self._spread_order(len(wins))
+        chunk = self.window_batch
+        best_margin, best_idx, done = -math.inf, 0, 0
+        for c0 in range(0, len(order), chunk):
+            if deadline is not None and time.perf_counter() > deadline and (done or not force_first):
+                break
+            idx = order[c0:c0 + chunk]
+            with self._lock:  # szybkie tokenizatory HF nie są bezpieczne przy współbieżnym użyciu
+                batch = self._tok([pieces[i] for i in idx], padding=True, truncation=True, max_length=self.max_length, return_tensors="pt")
+            with self._torch.inference_mode():
+                logits = self._model(**batch).logits.double()
+                others = self._torch.cat([logits[:, : self._pos], logits[:, self._pos + 1:]], dim=-1)
+                margins = logits[:, self._pos] - self._torch.logsumexp(others, dim=-1)
+            k = int(margins.argmax())
+            if float(margins[k]) > best_margin:
+                best_margin, best_idx = float(margins[k]), idx[k]
+            done += len(idx)
+        return best_margin, wins[best_idx][1], done, total
 
     def run(self, req: ClassifyRequest, norm: Normalized) -> Finding:
-        best_margin, best, coverage = -math.inf, None, 1.0
+        best_margin, best = -math.inf, None
+        evaluated = total_windows = 0
+        deadline = time.perf_counter() + self.time_budget_ms / 1000 if self.time_budget_ms else None
         for v in norm.variants()[: self.max_variants]:
-            margin, span, cov = self.margin(v.text)
-            coverage = min(coverage, cov)
+            # pierwszy wariant (oryginał) zawsze dostaje przynajmniej jedną porcję; kolejne tylko, dopóki budżet czasu nie minął
+            margin, span, done, total = self._margin(v.text, deadline, force_first=not evaluated)
+            evaluated += done
+            total_windows += total
             if margin > best_margin:
                 best_margin = margin
                 best = RawEvidence(text=v.text[span[0]:span[1]] if span else v.text[:200], variant=v.name, span=span)
+        coverage = evaluated / total_windows if total_windows else 1.0
         raw = sigmoid(best_margin)
         score = self.calibration.apply(best_margin, self.target_prior) if self.calibration else raw
         flagged = self.label_threshold is not None and score >= self.label_threshold

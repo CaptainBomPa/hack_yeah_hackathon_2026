@@ -45,6 +45,10 @@ class EvidenceSanitizer:
             log.warning("Brak %s: skróty dowodów są losowe i zmienią się po restarcie.", cfg.digest_key_env)
         return cls(key, cfg.include_preview)
 
+    def digest(self, text: str) -> str:
+        """Skrót HMAC całego tekstu do korelacji w logach (powtórzenia), bez możliwości odtworzenia treści."""
+        return hmac.new(self._key, text.encode("utf-8", "surrogatepass"), hashlib.sha256).hexdigest()[:12]
+
     def sanitize(self, raw: RawEvidence | None) -> Evidence | None:
         if raw is None:
             return None

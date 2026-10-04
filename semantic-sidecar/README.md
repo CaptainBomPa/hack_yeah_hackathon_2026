@@ -128,3 +128,12 @@ semantic-sidecar/
 
 Filtr w gatewayu (krok B), twardy deadline po stronie gatewaya, hot-reload konfiguracji, detektory dla P3/P4 i sesji, **zbudowanie i sprawdzenie
 obrazu Dockera** (pliki są gotowe, zob. sekcja Docker, ale obraz nie był jeszcze budowany), telemetria, integracja z gatewayem.
+
+## Logi
+
+Strukturalne (JSON, jedna linia na zdarzenie) na stdout. `SEMANTIC_LOG_LEVEL` (domyślnie `INFO`), `SEMANTIC_LOG_FORMAT` (`json` albo `text`).
+Każde `/classify` daje jedną linię `classified`: `checkpoint`, `text_chars`, `text_digest` (HMAC, do korelacji powtórzeń), wyniki i czasy detektorów,
+`covered`, `complete`, `missing`, `total_ms`. Poza tym: `sidecar_started` (konfiguracja, wersje, rozgrzewka), `check_missing`, `input_too_large`,
+`http_error`, `invalid_request`, `slow_request`, `unhandled_error`. Identyfikator żądania pochodzi z nagłówka `X-Request-ID` (po walidacji) albo jest
+generowany, wraca w nagłówku odpowiedzi i jest w każdym logu. **Treść promptu i tekst wyjątków nigdy nie trafiają do logów** (test: `tests/test_logging.py`).
+Klucz skrótu: `SEMANTIC_EVIDENCE_KEY` (bez niego skróty zmieniają się po restarcie).

@@ -5,7 +5,10 @@
 # Modele są wymienne: zmiana `model_dir` i `positive_label` wystarcza, bez zmian w kodzie.
 
 input:
-  pre_normalized: true
+  # false = sidecar normalizuje sam (warianty: odkodowane, leet, litery rozstrzelone, od tyłu, wielkość liter, homoglify).
+  # Gateway (Java) normalizacji jeszcze nie robi, więc dziś musi robić to sidecar: pomiar na puli testów pokazał leet 29% -> 86%,
+  # tekst od tyłu 24% -> 81%, rozstrzelone litery 5% -> 95%. Gdy Java zacznie normalizować, ustaw true (kontrakt: docs/input-contract.md).
+  pre_normalized: false
 
 limits:
   max_input_chars: 20000
@@ -29,6 +32,9 @@ detectors:
       positive_label: INJECTION
       calibration: config/calibration/injection_classifier_horizon.json   # scripts/calibrate.py --fit heldout
       # target_prior: 0.05    # opcjonalnie: przesuń wynik na inną częstość ataków (dopasowano przy 23%)
-      max_length: 512         # okna jak w pomiarach (model obsługuje do 8k tokenów)
+      max_length: 512         # okna 512 są ok. 5x tańsze na token niż 2048 (zmierzone), a model obsługuje do 8k
+      max_windows: 24         # było 8: przy 20000 znakach atak w środku tekstu był wykrywany w 17% przypadków, teraz w 96%
+      time_budget_ms: 1200    # po tym czasie kolejne okna nie są oceniane, a `coverage` < 1 (zamiast timeoutu i blokady całego żądania)
+      window_batch: 4         # okien na wywołanie modelu; budżet sprawdzamy po każdej porcji (w Dockerze 1 okno to ok. 0,3 s, na Macu ok. 0,06 s)
       label: injection
       checkpoints: [P1, P2, P5]

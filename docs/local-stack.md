@@ -44,8 +44,7 @@ W odpowiedzi `trace` pokazuje każdą kontrolę: `kind` (`deterministic` albo `s
 
 ## Znane ograniczenia (ważne przy testach)
 
-- **Normalizacji w gatewayu jeszcze nie ma** (robi ją zespół). Ataki zakodowane (base64, hex, homoglify) mogą przejść. Tymczasowo sidecar potrafi normalizować sam:
-  w `semantic-sidecar/config/semantic.models.yaml` ustaw `input.pre_normalized: false` i zrestartuj sidecara (`docker compose restart semantic-sidecar`).
+- **Normalizacji w gatewayu jeszcze nie ma** (robi ją zespół), więc **normalizuje sam sidecar** (`input.pre_normalized: false` w `semantic-sidecar/config/semantic.models.yaml`): odkodowuje base64/hex, rozwija leet, litery rozstrzelone, tekst od tyłu i naprzemienną wielkość liter. Gdy Java zacznie normalizować, ustaw `true`.
 - Sidecar pokrywa dziś **tylko wejście (P1)**. Odpowiedź modelu i wywołania narzędzi nie mają kontroli semantycznej.
 - Jeden klasyfikator (Horizon small), próg blokady 0,9: na naszych atakach recall ok. 85%, na NotInject (trudne negatywy) ok. 1% fałszywych alarmów. Na zewnętrznych danych recall jest niższy (np. `deepset` ok. 23% przy tym progu, bo wiele jego ataków nie ma wyraźnych sygnałów). Zob. `semantic-sidecar/docs/models.md`.
 - Pierwsze zapytanie do Ollamy bywa wolne (ładowanie modelu).

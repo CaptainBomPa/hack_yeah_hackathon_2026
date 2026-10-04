@@ -44,6 +44,7 @@ class DecodersConfig(BaseModel):
 class DeobfuscateConfig(BaseModel):
     leet: bool = True
     spaced: bool = True
+    case: bool = True
     markup: bool = True
 
 
