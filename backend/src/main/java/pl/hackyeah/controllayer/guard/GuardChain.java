@@ -84,7 +84,7 @@ public class GuardChain {
      * (fail-closed / fail-open) — po powrocie providera ta sama treść musi zostać sprawdzona naprawdę.
      */
     public CachedRun runCached(ActivePolicy policy, Stage stage, GuardContext context) {
-        boolean cacheable = chainFor(policy).get(stage).stream().allMatch(entry -> entry.guard().cacheable());
+        boolean cacheable = chainFor(policy).byStage().get(stage).stream().allMatch(entry -> entry.guard().cacheable());
         if (!cacheable) {
             return new CachedRun(run(policy, stage, context), false);
         }
