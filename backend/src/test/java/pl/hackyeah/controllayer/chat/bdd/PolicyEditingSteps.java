@@ -39,6 +39,11 @@ public class PolicyEditingSteps {
         world.setModelEnabledLive(model, true);
     }
 
+    @When("the admin sets guard {string}'s order to {int}")
+    public void theAdminSetsGuardsOrderTo(String guardId, int order) {
+        world.setGuardOrderLive(guardId, order);
+    }
+
     @When("the admin disables guard {string}")
     public void theAdminDisablesGuard(String guardId) {
         world.setGuardEnabledLive(guardId, false);
@@ -67,6 +72,16 @@ public class PolicyEditingSteps {
     @When("the admin adds recognizer {string} to guard {string}'s {string} list")
     public void theAdminAddsRecognizerToGuardsList(String recognizerId, String guardId, String paramName) {
         world.setGuardParamLive(guardId, paramName, List.of(recognizerId));
+    }
+
+    @When("the admin adds rule {string} to guard {string}'s {string} list")
+    public void theAdminAddsRuleToGuardsList(String ruleId, String guardId, String paramName) {
+        world.setGuardParamLive(guardId, paramName, List.of(ruleId));
+    }
+
+    @When("the admin clears guard {string}'s {string} list")
+    public void theAdminClearsGuardsList(String guardId, String paramName) {
+        world.setGuardParamLive(guardId, paramName, List.of());
     }
 
     @When("the admin changes role {string}'s daily budget to {long} tokens")

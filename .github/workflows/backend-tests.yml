@@ -1,0 +1,84 @@
+name: Backend tests
+
+# Runs the backend's full self-testing suite (JUnit + the Cucumber BDD suite under
+# backend/src/test/resources/features) on every push to main (i.e. after a PR merge) and on every
+# pull request targeting main, so a broken build is visible before it merges too.
+#
+# Deliberately runs `./gradlew test`, not `./gradlew testWithSidecar`: the sidecar variant needs
+# Docker and downloads a ~600MB model from Hugging Face (see backend/README.md "Self-testing
+# suite") — too slow/flaky for CI on every push. The default suite is fully self-contained
+# (in-memory H2, HTTP fakes for the model/sidecar, no external services or secrets needed), which
+# is exactly what makes it a good fit for CI in the first place.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Backend test suite
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK (Temurin, matches the project's Gradle toolchain)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Run backend tests (JUnit + Cucumber BDD)
+        run: ./gradlew test --no-daemon
+
+      - name: Publish a test summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob
+          import re
+          import os
+
+          total = skipped = failed = 0
+          for path in glob.glob("build/test-results/test/*.xml"):
+              text = open(path, encoding="utf-8").read()
+              m = re.search(
+                  r'tests="(\d+)" skipped="(\d+)" failures="(\d+)" errors="(\d+)"', text
+              )
+              if not m:
+                  continue
+              t, s, f, e = map(int, m.groups())
+              total += t
+              skipped += s
+              failed += f + e
+
+          passed = total - skipped - failed
+          icon = "✅" if failed == 0 else "❌"
+
+          summary = os.environ["GITHUB_STEP_SUMMARY"]
+          with open(summary, "a", encoding="utf-8") as out:
+              out.write(f"## {icon} Backend test results\n\n")
+              out.write("| Total | Passed | Skipped | Failed |\n")
+              out.write("|---|---|---|---|\n")
+              out.write(f"| {total} | {passed} | {skipped} | {failed} |\n")
+          PY
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: |
+            backend/build/reports/tests/test
+            backend/build/reports/cucumber
+            backend/build/test-results/test
+          retention-days: 14

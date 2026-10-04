@@ -21,6 +21,11 @@ public class PolicySteps {
         world.registerModelOnly(model);
     }
 
+    @Given("policy {string} allows any model")
+    public void policyAllowsAnyModel(String role) {
+        world.allowRoleAnyModel(role);
+    }
+
     @Given("role {string} has a daily budget limit of {long} tokens")
     public void roleHasADailyBudgetLimitOfTokens(String role, long tokens) {
         world.setRoleDailyBudget(role, tokens);
@@ -29,5 +34,10 @@ public class PolicySteps {
     @Given("the maximum input size is {int} tokens")
     public void theMaximumInputSizeIsTokens(int maxTokens) {
         world.setMaxInputTokens(maxTokens);
+    }
+
+    @Given("the maximum output size is {int} tokens")
+    public void theMaximumOutputSizeIsTokens(int maxTokens) {
+        world.setMaxOutputTokens(maxTokens);
     }
 }

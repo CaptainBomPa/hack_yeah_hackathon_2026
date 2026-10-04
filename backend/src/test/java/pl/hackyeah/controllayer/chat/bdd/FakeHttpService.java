@@ -20,6 +20,7 @@ class FakeHttpService {
 
     private final HttpServer server;
     private volatile Function<String, Response> handler = body -> new Response(200, "{}");
+    private volatile long delayMillis;
 
     FakeHttpService(String path) {
         try {
@@ -29,6 +30,13 @@ class FakeHttpService {
         }
         server.createContext(path, exchange -> {
             String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            if (delayMillis > 0) {
+                try {
+                    Thread.sleep(delayMillis);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             Response response = handler.apply(requestBody);
             byte[] bytes = response.body().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -42,6 +50,11 @@ class FakeHttpService {
 
     void respond(Function<String, Response> newHandler) {
         this.handler = newHandler;
+    }
+
+    /** Delays every response by this long — used to force a client-side timeout deterministically. */
+    void delayResponsesBy(long millis) {
+        this.delayMillis = millis;
     }
 
     String url() {

@@ -1,5 +1,7 @@
 # HackYeah Hackathon 2026 — AI Control Layer
 
+[![Backend tests](https://github.com/CaptainBomPa/hack_yeah_hackathon_2026/actions/workflows/backend-tests.yml/badge.svg?branch=main)](https://github.com/CaptainBomPa/hack_yeah_hackathon_2026/actions/workflows/backend-tests.yml)
+
 Gateway bezpieczeństwa przed LLM: guardraile deterministyczne i semantyczne, budżetowanie,
 audyt oraz dashboard.
 

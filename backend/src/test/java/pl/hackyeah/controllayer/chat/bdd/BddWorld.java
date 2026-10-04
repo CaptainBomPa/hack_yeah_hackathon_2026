@@ -33,6 +33,7 @@ import pl.hackyeah.controllayer.guard.Guard;
 import pl.hackyeah.controllayer.guard.GuardChain;
 import pl.hackyeah.controllayer.guard.GuardProperties;
 import pl.hackyeah.controllayer.guard.pii.PiiRecognizerGuard;
+import pl.hackyeah.controllayer.guard.secrets.SecretGuard;
 import pl.hackyeah.controllayer.guard.semantic.SemanticGuard;
 import pl.hackyeah.controllayer.guard.semantic.SidecarClient;
 import pl.hackyeah.controllayer.guard.semantic.SidecarProperties;
@@ -82,6 +83,7 @@ public class BddWorld {
 
     public BddWorld() {
         guardRules.put("PII-RECOGNIZERS", new GuardProperties.Rule(true, 100, Map.of()));
+        guardRules.put("SEC-GITLEAKS", new GuardProperties.Rule(true, 150, Map.of()));
         // PolicyValidator requires an "admin" role to exist in every policy document, including
         // the seed the store boots with — see PolicyValidator.ADMIN_ROLE.
         rolePolicies.put("admin", new PolicyProperties.RolePolicy(List.of(PolicyDocument.ANY_MODEL), null));
@@ -96,6 +98,13 @@ public class BddWorld {
         models.add(modelTag);
         rolePolicies.put(role, new PolicyProperties.RolePolicy(models, existing == null ? null : existing.budget()));
         defaultModelTag = modelTag;
+    }
+
+    /** Grants {@code role} every catalog model via {@code PolicyDocument.ANY_MODEL} ("*"), without picking one. */
+    public void allowRoleAnyModel(String role) {
+        var existing = rolePolicies.get(role);
+        rolePolicies.put(role,
+                new PolicyProperties.RolePolicy(List.of(PolicyDocument.ANY_MODEL), existing == null ? null : existing.budget()));
     }
 
     public void registerModelOnly(String modelTag) {
@@ -114,6 +123,10 @@ public class BddWorld {
 
     public void setMaxInputTokens(int max) {
         this.maxInputTokens = max;
+    }
+
+    public void setMaxOutputTokens(int max) {
+        this.maxOutputTokens = max;
     }
 
     public void loginAs(String login, String role) {
@@ -140,6 +153,61 @@ public class BddWorld {
     public void sidecarIsUnavailable() {
         enableSemanticGuard();
         sidecarDown = true;
+    }
+
+    /** Two detectors instead of one — SEM-001 blocks on the MAX score, not the first or the average. */
+    public void sidecarReportsScores(double first, double second) {
+        enableSemanticGuard();
+        ensureFakeSidecar();
+        fakeSidecar.respond(body -> new FakeHttpService.Response(200, sidecarMultiScoreResponseJson(first, second)));
+    }
+
+    /** No detector covered this checkpoint at all — distinct from a low/zero score (SemanticGuard.check). */
+    public void sidecarReturnsNoResults() {
+        enableSemanticGuard();
+        ensureFakeSidecar();
+        fakeSidecar.respond(body -> new FakeHttpService.Response(200,
+                "{\"checkpoint\":\"P1\",\"complete\":true,\"missing_checks\":[],\"results\":[]}"));
+    }
+
+    /** complete=false with no usable result — e.g. a detector timed out sidecar-side. */
+    public void sidecarReturnsIncompleteCheck() {
+        enableSemanticGuard();
+        ensureFakeSidecar();
+        fakeSidecar.respond(body -> new FakeHttpService.Response(200,
+                "{\"checkpoint\":\"P1\",\"complete\":false,"
+                        + "\"missing_checks\":[{\"check\":\"P1\",\"reason\":\"timeout\"}],\"results\":[]}"));
+    }
+
+    /** Forces a client-side timeout: the fake sleeps longer than SEM-001's configured timeoutMs. */
+    public void sidecarRespondsSlowly(long delayMillis) {
+        enableSemanticGuard();
+        ensureFakeSidecar();
+        fakeSidecar.delayResponsesBy(delayMillis);
+        fakeSidecar.respond(body -> new FakeHttpService.Response(200, sidecarResponseJson(0.0)));
+    }
+
+    public void setSemanticBlockThreshold(double threshold) {
+        enableSemanticGuard();
+        guardRules.merge("SEM-001", new GuardProperties.Rule(true, 200, Map.of("blockThreshold", threshold)),
+                (existing, added) -> withParam(existing, "blockThreshold", threshold));
+    }
+
+    public void setSemanticFailureMode(String mode) {
+        enableSemanticGuard();
+        guardRules.compute("SEM-001", (id, existing) -> withParam(existing, "failureMode", mode));
+    }
+
+    public void setSemanticTimeoutMs(int timeoutMs) {
+        enableSemanticGuard();
+        guardRules.compute("SEM-001", (id, existing) -> withParam(existing, "timeoutMs", timeoutMs));
+    }
+
+    /** Merges one param into an existing (pre-controller) guard rule without disturbing the rest. */
+    private static GuardProperties.Rule withParam(GuardProperties.Rule existing, String name, Object value) {
+        var params = new LinkedHashMap<>(existing.params());
+        params.put(name, value);
+        return new GuardProperties.Rule(existing.enabled(), existing.order(), params);
     }
 
     /**
@@ -252,6 +320,17 @@ public class BddWorld {
         });
     }
 
+    /** Changes WHEN a guard runs relative to the others (lower runs first) — not a {@code params} entry. */
+    public void setGuardOrderLive(String guardId, int order) {
+        ensureController();
+        editPolicy(doc -> {
+            var guards = new LinkedHashMap<>(doc.guards());
+            var existing = guards.get(guardId);
+            guards.put(guardId, new PolicyDocument.GuardPolicy(existing.enabled(), order, existing.params()));
+            return new PolicyDocument(doc.roles(), doc.models(), guards, doc.limits(), doc.rateLimit());
+        });
+    }
+
     public void setGuardParamLive(String guardId, String paramName, Object value) {
         ensureController();
         editPolicy(doc -> {
@@ -281,13 +360,23 @@ public class BddWorld {
     }
 
     public void attemptInvalidPolicyEdit() {
+        attemptPolicyEdit(doc -> new PolicyDocument(Map.of(), doc.models(), doc.guards(), doc.limits(), doc.rateLimit()));
+    }
+
+    /** General-purpose: builds any (valid or invalid) document and records whether it was rejected. */
+    public void attemptPolicyEdit(UnaryOperator<PolicyDocument> mutator) {
         ensureController();
         lastEditWasRejected = false;
         try {
-            editPolicy(doc -> new PolicyDocument(Map.of(), doc.models(), doc.guards(), doc.limits(), doc.rateLimit()));
+            editPolicy(mutator);
         } catch (PolicyStore.ValidationException e) {
             lastEditWasRejected = true;
         }
+    }
+
+    public PolicyDocument currentPolicyDocument() {
+        ensureController();
+        return policyStore.current().document();
     }
 
     private void editPolicy(UnaryOperator<PolicyDocument> mutator) {
@@ -320,6 +409,7 @@ public class BddWorld {
 
         List<Guard> guards = new ArrayList<>();
         guards.add(new PiiRecognizerGuard(guardProperties, new DefaultResourceLoader()));
+        guards.add(new SecretGuard());
         if (guardRules.containsKey("SEM-001")) {
             String sidecarUrl = realSidecarUrl != null ? realSidecarUrl
                     : sidecarDown || fakeSidecar == null ? "http://localhost:1" : fakeSidecar.url();
@@ -412,6 +502,12 @@ public class BddWorld {
         return "{\"checkpoint\":\"P1\",\"complete\":true,\"missing_checks\":[],\"results\":["
                 + "{\"detector\":\"injection_classifier_protectai\",\"status\":\"ok\",\"score\":" + score
                 + ",\"raw_score\":" + score + "}]}";
+    }
+
+    private static String sidecarMultiScoreResponseJson(double first, double second) {
+        return "{\"checkpoint\":\"P1\",\"complete\":true,\"missing_checks\":[],\"results\":["
+                + "{\"detector\":\"detector-a\",\"status\":\"ok\",\"score\":" + first + ",\"raw_score\":" + first + "},"
+                + "{\"detector\":\"detector-b\",\"status\":\"ok\",\"score\":" + second + ",\"raw_score\":" + second + "}]}";
     }
 
     public void tearDown() {

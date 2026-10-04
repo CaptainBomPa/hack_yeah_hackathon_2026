@@ -3,6 +3,7 @@ package pl.hackyeah.controllayer.chat.bdd;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.cucumber.java.en.Then;
 
@@ -36,6 +37,13 @@ public class AssertionSteps {
         var message = world.lastResponse().message();
         String content = message == null ? "" : message.content();
         assertFalse(content.contains(fragment), "response should not contain: " + fragment);
+    }
+
+    @Then("the response contains {string}")
+    public void theResponseContains(String fragment) {
+        var message = world.lastResponse().message();
+        String content = message == null ? "" : message.content();
+        assertTrue(content.contains(fragment), "response should contain: " + fragment);
     }
 
     @Then("the audit log contains exactly {int} entry/entries")

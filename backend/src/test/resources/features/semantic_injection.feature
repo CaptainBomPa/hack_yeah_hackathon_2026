@@ -24,3 +24,51 @@ Feature: Semantic prompt-injection control via the sidecar (SEM-001)
     When the user sends the prompt "any text"
     Then the response action is "block"
     And it is blocked by "SEM-001"
+
+  Scenario: A score exactly equal to the block threshold still blocks (boundary is inclusive)
+    Given the semantic block threshold is 0.9
+    And the semantic sidecar will score this prompt 0.9
+    And the model responds with "ok"
+    When the user sends the prompt "borderline prompt"
+    Then the response action is "block"
+    And it is blocked by "SEM-001"
+
+  Scenario: A score one step below the block threshold passes
+    Given the semantic block threshold is 0.9
+    And the semantic sidecar will score this prompt 0.8999
+    And the model responds with "ok"
+    When the user sends the prompt "borderline prompt"
+    Then the response action is "allow"
+
+  Scenario: With two detectors, the higher score decides — not the first one or the average
+    Given the semantic block threshold is 0.9
+    And the semantic sidecar reports scores 0.1 and 0.95 for this prompt
+    And the model responds with "ok"
+    When the user sends the prompt "two detectors disagree"
+    Then the response action is "block"
+    And it is blocked by "SEM-001"
+
+  Scenario: No detector covered this checkpoint — treated as no coverage, not as "safe" (fail-closed)
+    Given the semantic sidecar returns no results
+    When the user sends the prompt "any text"
+    Then the response action is "block"
+    And it is blocked by "SEM-001"
+
+  Scenario: An incomplete check (e.g. a detector timed out sidecar-side) fails closed
+    Given the semantic sidecar returns an incomplete check
+    When the user sends the prompt "any text"
+    Then the response action is "block"
+    And it is blocked by "SEM-001"
+
+  Scenario: Switching to fail-open lets an incomplete check pass instead of blocking
+    Given the semantic failure mode is "open"
+    And the semantic sidecar returns an incomplete check
+    And the model responds with "ok"
+    When the user sends the prompt "any text"
+    Then the response action is "allow"
+
+  Scenario: A sidecar slower than the configured timeout is treated as unavailable (fail-closed)
+    Given the semantic sidecar responds slower than its timeout
+    When the user sends the prompt "any text"
+    Then the response action is "block"
+    And it is blocked by "SEM-001"
