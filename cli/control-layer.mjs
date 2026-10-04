@@ -12,7 +12,7 @@ const PROVIDER = 'ai_control_layer_cli_v1';
 // so `run codex` works without install, --user or a password. Override with --user / CL_GATEWAY_PASSWORD.
 export const DEMO_USER = 'codex-agent';
 export const DEMO_PASSWORD = 'codex-agent-123';
-const DEFAULT_GATEWAY = 'http://localhost:8000/v1';
+const DEFAULT_GATEWAY = 'https://apillminator.fmroz.me/v1';
 
 export function defaultConfig() {
   return { owner: OWNER, enabled: true, gateway: DEFAULT_GATEWAY, user: DEMO_USER, billing: 'chatgpt-subscription' };

@@ -50,8 +50,8 @@ node cli/control-layer.mjs run codex
 ```
 
 Launcher domyślnie używa konta demo `codex-agent` / `codex-agent-123` (rola `codex`,
-`config/users.yaml`) i gatewaya `http://localhost:8000/v1`. Inne konto lub zdalny gateway:
-`install codex --user LOGIN --gateway https://HOST/v1` (szczegóły w [cli/README.md](../cli/README.md)).
+`config/users.yaml`) i wdrożonego gatewaya `https://apillminator.fmroz.me/v1`. Lokalny stack, inne konto:
+`install codex --gateway http://localhost:8000/v1 [--user LOGIN]` (szczegóły w [cli/README.md](../cli/README.md)).
 
 Routing jest ustawiany tylko dla tego procesu przez argumenty Codexa. Launcher zachowuje
 oryginalny `CODEX_HOME`, konfigurację i magazyn logowania; sam Codex odświeża OAuth tak jak zwykle.

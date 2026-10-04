@@ -129,7 +129,7 @@ test('model is optional: without it Codex keeps its own default and /model', () 
 test('works out of the box with the demo account: no install, --user or password needed', async () => {
   const config = defaultConfig();
   assert.equal(config.user, DEMO_USER);
-  assert.equal(config.gateway, 'http://localhost:8000/v1');
+  assert.equal(config.gateway, 'https://apillminator.fmroz.me/v1');
   validate(config);
   const spec = childSpec(config, [], {}, DEMO_PASSWORD);
   assert.equal(spec.env.CL_CODEX_AUTH, `Basic ${Buffer.from(`${DEMO_USER}:${DEMO_PASSWORD}`).toString('base64')}`);
