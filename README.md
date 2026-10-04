@@ -75,7 +75,7 @@ playground (`/v1/chat/completions`) — both integrations run side by side.
 
 ```bash
 codex login                            # once, ChatGPT login
-node cli/control-layer.mjs run codex   # Codex through the local gateway, demo account codex-agent
+node cli/control-layer.mjs run codex   # Codex through https://apillminator.fmroz.me, demo account codex-agent
 ```
 
 - Launcher for Windows/macOS/Linux: [cli/README.md](cli/README.md)

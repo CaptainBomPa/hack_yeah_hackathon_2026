@@ -19,7 +19,8 @@ node cli/control-layer.mjs run codex -- exec "Explain this repository"
 ```
 
 Without `install`, `run` uses the demo gateway account `codex-agent` / `codex-agent-123`
-(hardcoded, same as `backend/config/users.yaml`) and the gateway at `http://localhost:8000/v1`.
+(hardcoded, same as `backend/config/users.yaml`) and the deployed gateway `https://apillminator.fmroz.me/v1`.
+For a local stack: `node cli/control-layer.mjs install codex --gateway http://localhost:8000/v1`.
 
 Optional — a stored profile with another account, a remote gateway or a pinned model:
 
