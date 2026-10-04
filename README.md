@@ -2,42 +2,62 @@
 
 [![Backend tests](https://github.com/CaptainBomPa/hack_yeah_hackathon_2026/actions/workflows/backend-tests.yml/badge.svg?branch=main)](https://github.com/CaptainBomPa/hack_yeah_hackathon_2026/actions/workflows/backend-tests.yml)
 
-Gateway bezpieczeństwa przed LLM: guardraile deterministyczne i semantyczne, budżetowanie,
-audyt oraz dashboard.
+A security gateway in front of LLMs: deterministic and semantic guardrails, budget governance,
+audit logging and a dashboard.
 
-Najważniejszym materiałem źródłowym jest
-[`CRITERIA AI Control Layer.pdf`](project-spec/CRITERIA%20AI%20Control%20Layer.pdf), a
-[`VISION.md`](VISION.md) jest jedynym wiążącym opisem naszej architektury, technologii,
-zakresu MVP i planu implementacji. Przeczytaj oba przed rozpoczęciem pracy.
+## Deployed application
 
-## Repozytorium
+**[https://llminator.fmroz.me/](https://llminator.fmroz.me/)**
 
-- [`backend/`](backend/) — Java 25, Spring Boot 4 i Spring Cloud Gateway;
-- [`frontend/`](frontend/) — React + TypeScript, playground i dashboard;
-- [`docs/tooling.md`](docs/tooling.md) — pomocnicze wybory bibliotek i modeli;
-- [`docker-compose.yml`](docker-compose.yml) — środowisko aplikacyjne.
+Demo accounts (`backend/config/users.yaml`):
 
-Aktualne instrukcje uruchomienia są w README poszczególnych komponentów. Stan implementacji
-i kolejność prac opisuje `VISION.md`.
+| Login | Password | Role | Permissions |
+|---|---|---|---|
+| `admin` | `admin` | admin | full access: every model, the `/dashboard`, `/audit` and `/policies` panels |
+| `chat1`, `chat2`, `chat3` | same as login | chat | `/playground` on `qwen2.5:1.5b-instruct-q4_K_M` and `qwen2.5:0.5b`, 20,000 tokens/day limit |
+| `agent-runner` | `agent-runner-123` | agent | machine account (HTTP Basic), no frontend access |
+| `agent-sdk` | `agent-sdk-123` | agent | same as above |
 
-Przebudowa całego stacka w PowerShell: `.\scripts\rebuild.ps1`.
-Po zmianach backendu: `.\scripts\rebuild.ps1 -Target backend`.
-Szczegóły: [backend/README.md](backend/README.md#przebudowa-po-zmianach-powershell-z-katalogu-głównego-repo).
+What the views are for:
 
-## IntelliJ / Gradle
+- **Playground** — a plain chat sandbox: send any prompt and immediately see how the gateway
+  reacted (allow / redact / block) and why, for quick manual testing.
+- **Dashboard**, **Audit log** and **Policies** (admin only) — these cover what the task required:
+  live performance telemetry and dashboards, a full decision/audit log (with integrity
+  verification), and real-time policy editing (thresholds, guards, budgets) with no restart.
 
-Otwórz **ten katalog** (root repo) w IntelliJ — `settings.gradle` w roocie to composite build
-(`includeBuild('backend')`), więc `backend/` zostanie od razu rozpoznany i zaimportowany jako
-projekt Gradle, bez ręcznego "Link Gradle Project" na `backend/build.gradle`. `backend/`
-zachowuje przy tym własny, w pełni samodzielny build (Dockerfile i `docker-compose.yml` dalej
-budują go niezależnie) — root nic w nim nie zmienia, tylko ułatwia pracę w IDE.
+## Tests (Cucumber / self-testing suite)
 
-Z terminala, z poziomu roota:
+Scenarios: [`backend/src/test/resources/features/`](backend/src/test/resources/features/).
+Step definitions: [`backend/src/test/java/.../chat/bdd/`](backend/src/test/java/pl/hackyeah/controllayer/chat/bdd/).
 
 ```bash
-./gradlew :backend:bootRun   # profil local (H2)
-./gradlew :backend:test
+cd backend
+./gradlew test              # full suite (JUnit + Cucumber), no Docker needed
 ```
 
-`frontend/` to osobny projekt Node/Vite (`npm install && npm run dev` w `frontend/`) — nie
-wchodzi w ten composite build.
+Extended version with the real semantic sidecar (instead of an HTTP fake) — needs Docker,
+**first run downloads a ~600MB model from Hugging Face and can take a few minutes**:
+
+```bash
+./gradlew testWithSidecar
+```
+
+## Project structure
+
+- [`backend/`](backend/) — Java 25 / Spring Boot 4: gateway, guards (PII, secrets, semantic,
+  budget, rate limit), live-editable policy
+- [`frontend/`](frontend/) — React + TypeScript: playground, dashboard, audit log, policy editor
+- [`semantic-sidecar/`](semantic-sidecar/) — Python/FastAPI prompt-injection classifier
+- [`docs/`](docs/) — architecture and decision docs
+- [`project-spec/`](project-spec/) — competition materials (CRITERIA, RULES)
+- [`docker-compose.yml`](docker-compose.yml) — the whole stack
+
+## Running it (Docker Compose)
+
+```bash
+docker compose up -d --build
+```
+
+First start downloads images and models (Ollama ~1.4GB, sidecar ~600MB) — takes a few minutes.
+Then: frontend on `localhost:3000`, backend on `localhost:8000`.
