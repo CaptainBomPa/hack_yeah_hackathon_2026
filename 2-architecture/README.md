@@ -2,100 +2,49 @@
 
 ## Diagram
 
-```mermaid
-flowchart TB
-    subgraph Clients
-        WEB["React SPA\nPlayground / Dashboard / Audit / Policies"]
-        CODEX["Codex CLI\n(user's ChatGPT OAuth)"]
-    end
+![Control Layer architecture](diagrams/control-layer-architecture.png)
 
-    subgraph GW["Java Gateway — Spring Boot / WebFlux (the decision-maker)"]
-        direction TB
-        AUTH["Auth\nlocal accounts (web) / API-style header (agents, codex)"]
-        CATALOG["Model allowlist\ncatalog x policy x role"]
-        RL["Rate limiter\ntoken bucket + concurrency"]
-        BUDGET["Budget gate\ninput size + daily token cap"]
-        subgraph CHAIN["Guard chain (order, fail-closed on exception)"]
-            direction LR
-            SIG["SIG-FEED\n(40)"] --> SEC["SEC-GITLEAKS\n(50)"] --> PII["PII-RECOGNIZERS\n(100)"] --> SEM["SEM-001\n(200)"]
-        end
-        AUDIT["Audit log\nHMAC-SHA256 hash chain, written before response"]
-    end
+## Walkthrough
 
-    SIDECAR["Semantic sidecar\nPython/FastAPI, Horizon classifier\n(signal only — Java decides)"]
-    OLLAMA["Ollama\nlocal LLM (qwen2.5)"]
-    CHATGPT["ChatGPT backend\n(Codex subscription, OAuth passthrough)"]
-    DB[("PostgreSQL\npolicy_version, audit_event,\nbudget_counter, rate_limit_*")]
+Every request — from the **Playground UI** (web chat) or an **AI Agent** (Codex CLI, or any
+other client speaking the gateway's API) — goes through the same pipeline, top to bottom:
 
-    WEB -->|"/v1/chat/completions"| AUTH
-    CODEX -->|"/v1/responses"| AUTH
-    AUTH --> CATALOG --> RL --> BUDGET --> CHAIN
-    SEM -.->|"POST /classify"| SIDECAR
-    CHAIN -->|allowed| UP{Upstream}
-    UP --> OLLAMA
-    UP --> CHATGPT
-    UP --> CHAIN
-    CHAIN --> AUDIT --> DB
-    CATALOG --> DB
-    RL --> DB
-    BUDGET --> DB
-    WEB -->|"/api/policy, /api/dashboard, /api/audit"| DB
-```
+1. **Spring Cloud Gateway** — the single entry point (Java/WebFlux). No request reaches a
+   protected model except through this path.
+2. **Identity & Model Access** — the caller is authenticated (local account for the web UI,
+   gateway credential for agents), then checked against the **model allowlist**: the model must
+   be in the deployment catalog *and* enabled by the active policy *and* listed for the caller's
+   role (or `"*"`). An unknown model and a "not allowed for this role" look identical to the
+   client — the gateway doesn't reveal which models exist but are off-limits.
+3. **Admission Control** — a token-bucket + concurrency rate limiter (per-user and global caps)
+   decides whether the request is admitted at all, before any content is inspected. `block`,
+   `monitor` or `off` per role.
+4. **Token Budget Check** — estimated input size and the role's remaining daily token budget are
+   checked (atomic DB reservation); a request that doesn't fit is rejected here, before it can
+   consume a guard's compute.
+5. **Guard Chain** — the content itself is evaluated by **ordered** guards. `Allow` → next guard,
+   `Redact` → rewrite the text and continue, `Block` → stop immediately:
+   - **Deterministic Guards** (Java, regex/checksum/rule-based, sub-millisecond each): the
+     **PII Guard** (Presidio-style recognizers, data-driven from `recognizers.yaml` — PESEL, NIP,
+     REGON, ID card, e-mail, phone, payment card, IBAN) and the **Secrets Guard** (a Java port of
+     the Gitleaks rule pack, `gitleaks.toml` — API keys, tokens, private keys). The deployed
+     chain also runs a third deterministic guard ahead of these two: **SIG-FEED**, which matches
+     known-attack signatures from an external, hot-reloadable feed (OSV.dev CVEs + hand-written
+     payload patterns) — same "data file in, guard out" shape as the two pictured.
+   - **Semantic Guards**: an interchangeable sidecar (currently
+     `Horizon-Labs/prompt-injection-guard-small`) scores prompt-injection/jailbreak risk over
+     plain HTTP. The box for "Other Semantic Sidecars (Optional)" is a real extension point, not
+     aspirational — the sidecar is a provider behind one contract, swappable for a different
+     model or a hosted API without touching the Java decision logic (`VISION.md` §2).
+   - The protected model itself (Ollama, or ChatGPT via Codex) is called only if the chain
+     allows the input; its response then runs back through the **same** Guard Chain (output
+     stage) before anything reaches the client — this is how a model "helpfully" repeating a
+     PESEL or pasting a secret back gets caught and redacted too.
+6. **Verdict Assembler** — combines the guard trace, budget/rate-limit outcome and the (possibly
+   redacted) model response into the final decision (`allow`/`redact`/`block`) returned to the
+   client, with the full per-check path attached for the UI's Explainable Verdict / X-ray view.
+7. **Audit Log** — every decision, including `allow`, is written **before** the response is sent;
+   it's tamper-evident (HMAC-SHA256 hash chain), so a judge can run an integrity check on demand.
 
-- **Java owns orchestration, policy and the final decision.** The semantic sidecar is an
-  interchangeable provider behind a plain HTTP interface (`POST /classify`) — it returns a
-  calibrated risk **score**, never a decision.
-- **Two upstreams, one pipeline.** Ollama (local, self-hosted) and ChatGPT via Codex CLI
-  (subscription OAuth, no API key) go through the exact same guard chain, budgets, rate limiter
-  and audit log — see `5-implementation/` for how the Codex adapter works.
-- **Policy hot-reload.** `PolicySource`/`PolicyStore` hand every component one `ActivePolicy`
-  snapshot per request; the guard chain is rebuilt only when the policy version/hash actually
-  changes and cached between requests otherwise.
-
-## Performance: deterministic vs non-deterministic enforcement
-
-Every guard records its **own** execution time (not a pipeline timestamp), so the cost of the
-control layer itself can be told apart from upstream model latency (`VISION.md` §4). Below is a
-real trace captured from the deployed instance (`/playground`, PESEL block — see
-`3-reporting/screenshots/playground-block-pesel.jpg`):
-
-| Check | Kind | Latency |
-|---|---|---|
-| `model.allowlist` | deterministic (gate) | 22 µs |
-| `SEC-GITLEAKS` | deterministic | 45 µs |
-| `budget.daily_cap` | deterministic (gate) | 224 µs |
-| `PII-RECOGNIZERS` | deterministic | 541 µs |
-| `rate.requests` | deterministic (gate) | 34 ms* |
-| **Total guard-layer overhead** | | **~41 ms (incl. first-request JIT/DB warmup)** |
-
-*\*Rate-limit/budget gates touch Postgres (atomic row reservation); deterministic content guards
-(regex/checksum engines, in-memory) are consistently sub-millisecond.*
-
-**Semantic guard (non-deterministic, Horizon `prompt-injection-guard-small`, ModernBERT-small,
-141M params)** — measured in `semantic-sidecar/docs/models.md`:
-
-| Metric | Value |
-|---|---|
-| Detector latency p50 / p95 (CPU, short text) | **14–16 ms / 23 ms** |
-| AUROC (own 122-case eval set) | 0.983 |
-| Recall @ FPR ≤ 1% | 82.6% |
-| FPR on hard negatives (NotInject, 339 cases) | 10.0% |
-| Peak process RSS | 0.84 GB |
-
-**Takeaway:** deterministic checks cost microseconds-to-low-milliseconds (dominated by the DB
-round-trip for budget/rate state, not computation); the semantic check costs **one to two orders
-of magnitude more** (~15–95 ms depending on model/load) because it's a real forward pass through a
-transformer. This is why semantics runs *last* in the chain (order 200) — cheap, high-confidence
-deterministic rules reject or redact first, so the expensive classifier only runs on what's left.
-End-to-end request latency (dashboard p50/p95, 7-day window: **7.4 s / 32.4 s**) is dominated by
-the *protected model's own* generation time, not the control layer — visible separately in the
-trace's `latency.totalMs` vs `latency.upstreamMs` vs per-guard timings.
-
-## Caching and correctness
-
-Guard verdicts for identical `(policy hash, stage, message text)` are cached for 30 minutes
-(`GuardResultCache`) so a client resending its own conversation history isn't re-scored every
-turn. Guards with state that can change **independently of the policy** (e.g. `SIG-FEED`'s
-file-based hot reload) opt out via `Guard.cacheable() == false`, so a feed edit is still visible
-on the very next request even if the exact same text was seen before — this exact interaction was
-caught and fixed via the Cucumber suite (`4-testing/`).
+Java owns every box in this diagram except the semantic sidecar itself: the sidecar returns a
+**signal** (a score), never a decision — "semantics is a signal, Java decides."
