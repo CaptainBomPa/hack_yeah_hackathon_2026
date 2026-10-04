@@ -42,6 +42,12 @@ public class SignatureFeedGuard implements Guard {
         return Set.of(Stage.INPUT, Stage.OUTPUT, Stage.TOOL_CALL);
     }
 
+    /** Hot-reloads from disk independently of the policy — caching by (policy, text) would hide that. */
+    @Override
+    public boolean cacheable() {
+        return false;
+    }
+
     @Override
     public Verdict check(GuardContext ctx, GuardSettings settings) {
         SignatureFeed feed = loader(settings).current();
