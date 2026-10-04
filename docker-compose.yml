@@ -93,7 +93,7 @@ services:
     build:
       context: ./semantic-sidecar
     restart: "no"
-    command: ["python", "-m", "scripts.fetch_models", "--if-missing", "--only", "injection_classifier_horizon"]
+    command: ["python", "-m", "scripts.fetch_models", "--if-missing", "--only", "injection_classifier_horizon", "injection_classifier_horizon_base"]
     volumes:
       - sidecar_models:/app/models
 

@@ -24,17 +24,23 @@ evidence:
   digest_key_env: SEMANTIC_EVIDENCE_KEY
 
 detectors:
-  injection_classifier_horizon:
-    kind: hf_classifier
+  # Zespół dwóch klasyfikatorów injection (Horizon small + base): średnia marginesów logitów, jedna wspólna kalibracja.
+  injection_classifier_ensemble:
+    kind: hf_ensemble
     enabled: true
     params:
-      model_dir: models/injection_classifier_horizon   # Horizon-Labs/prompt-injection-guard-small (Apache-2.0), zob. config/models.yaml
-      positive_label: INJECTION
-      calibration: config/calibration/injection_classifier_horizon.json   # scripts/calibrate.py --fit heldout
-      # target_prior: 0.05    # opcjonalnie: przesuń wynik na inną częstość ataków (dopasowano przy 23%)
-      max_length: 512         # okna 512 są ok. 5x tańsze na token niż 2048 (zmierzone), a model obsługuje do 8k
-      max_windows: 24         # było 8: przy 20000 znakach atak w środku tekstu był wykrywany w 17% przypadków, teraz w 96%
-      time_budget_ms: 1200    # po tym czasie kolejne okna nie są oceniane, a `coverage` < 1 (zamiast timeoutu i blokady całego żądania)
-      window_batch: 4         # okien na wywołanie modelu; budżet sprawdzamy po każdej porcji (w Dockerze 1 okno to ok. 0,3 s, na Macu ok. 0,06 s)
+      calibration: config/calibration/injection_classifier_ensemble.json   # scripts/calibrate.py --fit heldout
       label: injection
       checkpoints: [P1, P2, P5]
+      time_budget_ms: 1200    # wspólny budżet czasu obu modeli i wszystkich wariantów tekstu; po nim `coverage` < 1 zamiast timeoutu
+      members:
+        - model_dir: models/injection_classifier_horizon        # Horizon small (141M)
+          positive_label: INJECTION
+          max_length: 512         # okna 512 są ok. 5x tańsze na token niż 2048 (zmierzone)
+          max_windows: 24         # było 8: atak w środku tekstu 20000 znaków był wykrywany w 17% przypadków, teraz w 96%
+          window_batch: 4         # okien na wywołanie modelu; budżet sprawdzamy po każdej porcji
+        - model_dir: models/injection_classifier_horizon_base   # Horizon base (308M)
+          positive_label: INJECTION
+          max_length: 512
+          max_windows: 24
+          window_batch: 4

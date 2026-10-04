@@ -75,10 +75,11 @@ control-layer:
       # SEM-001: kontrola semantyczna przez sidecar (semantic-sidecar/). Domyślnie WYŁĄCZONA, bo bez sidecara
       # (fail-closed) blokowałaby każde żądanie. W docker-compose.yml włącza ją SEMANTIC_GUARD_ENABLED=true.
       # blockThreshold: skalibrowany wynik 0-1 detektora Horizon (sidecar), dobrany z docelowego odsetka fałszywych alarmów
-      # (nie "0.5"): 0.9 daje ok. 1% FPR na NotInject i ok. 85% recallu na naszych atakach. Zob. semantic-sidecar/docs/models.md.
+      # (nie "0.5"). 0.8 (było 0.9): jawne próby zmiany reguł 55% -> 74% (Simsonsun), 76% -> 86% (deepset), kosztem ok. +1.7 pp
+      # fałszywych alarmów na NotInject (1.2% -> 2.9%). Zob. semantic-sidecar/docs/decisions.md i models.md.
       # UWAGA: próg zależy od modelu i jego kalibracji (config/calibration/); po zmianie modelu trzeba go wyznaczyć od nowa.
       # failureMode: closed (awaria/brak wyniku = blokada) albo open.
-      SEM-001: { enabled: "${SEMANTIC_GUARD_ENABLED:false}", order: 200, params: { blockThreshold: 0.9, timeoutMs: 4000, failureMode: closed } }
+      SEM-001: { enabled: "${SEMANTIC_GUARD_ENABLED:false}", order: 200, params: { blockThreshold: 0.8, timeoutMs: 4000, failureMode: closed } }
   sidecar:
     # Sidecar semantyczny (Python/FastAPI, semantic-sidecar/), używany przez guard SEM-001 powyżej.
     base-url: ${SIDECAR_BASE_URL:http://localhost:8001}

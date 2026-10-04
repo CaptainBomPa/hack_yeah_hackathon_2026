@@ -243,3 +243,10 @@ PIArena 0,3% → 86%, BIPIA 0,6% → 22%. FPR na zbiorach negatywów: porównywa
 Zastrzeżenia: BIPIA i PIArena zbudowali pozytywy/negatywy autorzy Horizona (z cudzych danych), a Horizon trenował na podobnych, własnych dokumentach z wstrzyknięciami,
 więc przewaga w P2 może być zawyżona. Próg FPR 1% dobrano na tych samych negatywach, na których liczony jest recall (obciąża oba modele jednakowo).
 `protectai` nie jest przystosowany do P2 (karta: nie wykrywa jailbreaków, odradza system prompty), co tłumaczy jego wynik na BIPIA.
+
+## Zespół Horizon small + base (2026-10-04)
+
+Detektor `injection_classifier_ensemble` (`kind: hf_ensemble`) liczy średnią marginesów logitów obu modeli, a wynik kalibruje jedną funkcją Platta
+(`config/calibration/injection_classifier_ensemble.json`, dopasowanie na deepset-train + NotInject, ocena na deepset-test i naszych przypadkach).
+Pomiary i zastrzeżenia: `docs/decisions.md` (wpis z 2026-10-04). Próg blokady w Javie: 0,8.
+

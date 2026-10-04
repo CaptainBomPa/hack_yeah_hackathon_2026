@@ -53,7 +53,7 @@ def main() -> int:
     from app.calibration import PlattCalibration, sigmoid
     from app.config import NormalizationConfig
     from app.contract import Checkpoint
-    from app.detectors.hf_classifier import HFClassifierDetector
+    from app.registry import FACTORIES
     from app.normalize import normalize
     from evaluation.calibration_metrics import brier, ece, log_loss, reliability
     from evaluation.cases import load_cases
@@ -61,7 +61,7 @@ def main() -> int:
 
     entry = yaml.safe_load(args.config.read_text())["detectors"][args.detector]
     params = {k: v for k, v in entry["params"].items() if k not in ("calibration", "target_prior")}
-    det = HFClassifierDetector(name=args.detector, **params)
+    det = FACTORIES[entry.get("kind") or args.detector](args.detector, params)
     norm = lambda t: normalize(t, Checkpoint.P1, NormalizationConfig()).normalized
     uses_p2 = Checkpoint.P2 in det.checkpoints
 

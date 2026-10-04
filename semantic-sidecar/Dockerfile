@@ -37,7 +37,7 @@ RUN mkdir -p models && chown app:app models
 
 ARG BAKE_MODELS=0
 RUN if [ "$BAKE_MODELS" = "1" ]; then \
-        python -m scripts.fetch_models --only injection_classifier_horizon && chown -R app:app models; \
+        python -m scripts.fetch_models --only injection_classifier_horizon injection_classifier_horizon_base && chown -R app:app models; \
     fi
 
 USER app

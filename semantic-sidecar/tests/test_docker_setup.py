@@ -77,7 +77,14 @@ def test_models_requested_by_init_exist_in_models_config_and_are_enabled_in_side
     wanted = cmd[cmd.index("--only") + 1:]
     models = yaml.safe_load((ROOT / "config" / "models.yaml").read_text())["models"]
     detectors = yaml.safe_load((ROOT / "config" / "semantic.models.yaml").read_text())["detectors"]
-    used = {Path(d["params"]["model_dir"]).name for d in detectors.values() if d.get("enabled", True)}
+    def model_dirs(params: dict) -> set[str]:
+        dirs = {Path(params["model_dir"]).name} if "model_dir" in params else set()
+        for member in params.get("members", []):  # zespół: modele są w `members`
+            dirs |= model_dirs(member)
+        return dirs
+
+    used = set().union(*(model_dirs(d["params"]) for d in detectors.values() if d.get("enabled", True)))
+    assert used, "konfiguracja nie używa żadnego modelu"
     assert set(wanted) <= set(models)
     assert used <= set(wanted), f"sidecar używa modeli, których init nie pobiera: {sorted(used - set(wanted))}"
 

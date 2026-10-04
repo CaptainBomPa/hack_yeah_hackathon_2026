@@ -99,3 +99,13 @@ wyniki rozbija się per tag (`size:`, `pos:`, `fmt:`, `obf:`, `var:`, `doc:`, `s
 Zastrzeżenia: przypadki są szablonowe, a etykiety wynikają z konstrukcji. Pula mierzy odporność na rozmiar, pozycję, format i obfuskację oraz regresje,
 nie uogólnianie na nowe ataki. Część „trudnych negatywów w dokumentach" jest z natury niejednoznaczna (instrukcja dla człowieka w mailu wygląda jak
 instrukcja dla AI), więc FPR na nich traktuj jako górne oszacowanie. Testy kontraktu bez modelu: `tests/test_api_edge.py`; na prawdziwym modelu: `tests/test_real_model_edge.py`.
+
+### Zestaw `hard` (trudniejsze przypadki, w `evaluation/data/pool/hard.jsonl`)
+
+Ataki bez słów kluczowych (parafrazy nadpisania reguł, fałszywa władza i „tryby", persona zmieniająca konfigurację, zadanie-przynęta, wieloetapowe,
+eksfiltracja, fałszywe tokeny i formaty, ciche zmiany zachowania), transkrypty wieloturowe (3/8/15 tur, atak w pierwszej, środkowej i ostatniej wiadomości),
+zagnieżdżone kodowania (podwójne base64, base64 w JSON i komentarzu HTML, odwrócone + base64, przemyt znakami Unicode Tags, rot13 w URL, leet + rozstrzelone litery)
+oraz trudne negatywy zgodne z definicją ataku (próba ZMIANY reguł lub zachowania systemu): legalna fikcja i role, „jako badacz napisz książkę", preferencje użytkownika
+(„from now on use metric units"), edycja własnego tekstu, pisanie własnego system promptu, rozmowy o bezpieczeństwie AI, zakodowane niewinne treści.
+Zestaw NIE był używany do strojenia progów ani modeli. Ziarna: `HARD_ATTACKS`, `HARD_NEGATIVES2` w `evaluation/pool_seeds.py`; testy generatora: `tests/test_pool_builder.py`.
+
