@@ -194,3 +194,55 @@ def test_preview_is_off_by_default_and_masked_when_enabled():
 def test_mask_keeps_at_most_two_chars_per_word_and_limits_length():
     assert mask("password hunter2 ok") == "pa****** hu***** ok"
     assert len(mask("word " * 100)) <= 80
+
+
+# --- osobna pula normalizacji i ograniczenie równoległych inferencji (kaskada timeoutów na wolnym sprzęcie)
+
+def _runner_client(detectors, **deadlines):
+    cfg = Config(input=InputConfig(pre_normalized=False), deadlines=Deadlines(**deadlines),
+                 detectors={d.name: DetectorConfig(enabled=True) for d in detectors})
+    return TestClient(create_app(config=cfg, available={d.name: d for d in detectors}), raise_server_exceptions=False)
+
+
+def test_normalization_is_not_starved_by_detectors_that_hold_the_whole_pool():
+    # pula detektorów ma 1 wątek zajęty przez długo działający detektor; normalizacja nie może czekać w jego kolejce
+    c = _runner_client([SlowDetector(1.5)], max_workers=1, detector_timeout_ms=300, request_deadline_ms=3000, normalization_timeout_ms=400,
+                       max_concurrent_inference=4)
+    results = []
+    for _ in range(3):
+        body = c.post("/classify", json={"checkpoint": "P1", "text": "hello there"}).json()
+        results.append(body)
+    assert all(not any(m["check"] == "normalization" for m in b["missing_checks"]) for b in results), "normalizacja nie powinna dawać timeoutu"
+
+
+def test_busy_inference_slots_fail_fast_with_overloaded_instead_of_hanging():
+    c = _runner_client([SlowDetector(1.0)], max_workers=4, detector_timeout_ms=200, request_deadline_ms=3000,
+                       max_concurrent_inference=1, queue_wait_ms=100)
+    first = c.post("/classify", json={"checkpoint": "P1", "text": "a"}).json()          # timeout detektora, wątek nadal pracuje
+    assert first["results"][0]["status"] == "timeout"
+    started = time.perf_counter()
+    second = c.post("/classify", json={"checkpoint": "P1", "text": "b"}).json()         # slot nadal zajęty przez osierocony wątek
+    waited = time.perf_counter() - started
+    assert second["results"][0]["status"] == "skipped" and second["results"][0]["reason"] == "overloaded"
+    assert second["complete"] is False and waited < 0.6, f"odmowa powinna być szybka, trwała {waited:.2f}s"
+
+
+def test_slot_is_released_when_orphan_thread_finally_finishes():
+    c = _runner_client([SlowDetector(0.6)], max_workers=4, detector_timeout_ms=200, request_deadline_ms=3000,
+                       max_concurrent_inference=1, queue_wait_ms=100)
+    assert c.post("/classify", json={"checkpoint": "P1", "text": "a"}).json()["results"][0]["status"] == "timeout"
+    time.sleep(0.8)  # osierocony wątek kończy pracę
+    assert c.post("/classify", json={"checkpoint": "P1", "text": "b"}).json()["results"][0]["status"] in ("timeout", "ok")
+    third = c.post("/classify", json={"checkpoint": "P1", "text": "c"}).json()["results"][0]
+    assert third["reason"] != "overloaded" or third["status"] == "skipped"  # nie zablokowane na stałe
+    time.sleep(0.8)
+    assert c.post("/classify", json={"checkpoint": "P1", "text": "d"}).json()["results"][0]["reason"] != "overloaded"
+
+
+def test_waiting_request_gets_the_slot_when_the_previous_one_finishes_in_time():
+    c = _runner_client([OkDetector()], max_workers=2, max_concurrent_inference=1, queue_wait_ms=1000)
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        out = list(ex.map(lambda i: c.post("/classify", json={"checkpoint": "P1", "text": f"t{i}"}).json(), range(12)))
+    assert all(b["complete"] is True and b["results"][0]["status"] == "ok" for b in out)

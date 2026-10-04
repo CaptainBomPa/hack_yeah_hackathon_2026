@@ -25,6 +25,11 @@ class Deadlines(BaseModel):
     normalization_timeout_ms: int = 500
     detector_timeout_ms: int = 1000
     max_workers: int = 8  # pula wątków detektorów
+    # Ile żądań może jednocześnie wykonywać modele. Wątku modelu nie da się przerwać po timeoucie, więc bez limitu osierocone
+    # wątki piętrzą się, zabierają CPU kolejnym żądaniom i powodują kaskadę timeoutów. Slot jest zwalniany dopiero, gdy wątki
+    # naprawdę skończą (nie przy zwrocie odpowiedzi). Zbyt wolne żądania dostają szybko status `skipped`/`overloaded`.
+    max_concurrent_inference: int = 2
+    queue_wait_ms: int = 1500  # jak długo żądanie czeka na wolny slot, zanim dostanie `overloaded`
 
 
 class EvidenceConfig(BaseModel):

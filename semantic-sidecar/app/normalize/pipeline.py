@@ -1,12 +1,17 @@
 """Normalizacja tekstu przed klasyfikacją. Detektory dostają kilka wersji tekstu i biorą gorszy wynik.
 
 Wersje: original, normalized (Unicode, bez znaków niewidocznych, bez homoglifów, encje HTML),
-deobfuscated (leet, litery rozstrzelone, ukryty tekst z HTML), oraz odkodowane segmenty (base64, hex, ...).
+deobfuscated (leet, litery rozstrzelone, ukryty tekst z HTML), odkodowane segmenty (base64, hex, ...) oraz expanded.
+
+`expanded` to tekst, w którym zakodowane fragmenty są podmienione na swoją (najgłębiej) odkodowaną treść. Gdy istnieje, zastępuje
+`original` i `normalized` na liście wariantów: zakodowany ciąg znaków sam w sobie wygląda dla klasyfikatora podejrzanie, więc ocena
+oryginału z blobem blokowałaby niewinne zakodowane teksty, a maksimum po wariantach nigdy by tego nie naprawiło.
 """
 
 import html
 import re
 import unicodedata
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 from app.config import NormalizationConfig
@@ -24,6 +29,8 @@ class Segment:
     text: str
     depth: int
     span: tuple[int, int] | None = None
+    parent: int | None = None  # indeks segmentu, z którego odkodowano ten (łańcuch kodowań)
+    intermediate: bool = False  # z tego segmentu odkodowano coś głębiej: sam jest tylko pośrednim blobem i nie jest oceniany osobno
 
 
 @dataclass
@@ -46,7 +53,7 @@ class Signals:
 
 @dataclass
 class Variant:
-    name: str  # original | normalized | deobfuscated | decoded
+    name: str  # original | normalized | deobfuscated | decoded | expanded
     text: str
     detail: str = ""  # np. rodzaj dekodowania
 
@@ -58,31 +65,55 @@ class Normalized:
     deobfuscated: str | None
     decoded: list[Segment]
     signals: Signals
+    expanded: str | None = None  # tekst z odkodowanymi fragmentami w miejscu zakodowanych (None, gdy nic nie odkodowano)
 
     @property
     def changed(self) -> bool:
         return self.normalized != self.original
 
     def variants(self) -> list[Variant]:
-        out = [Variant("original", self.original)]
-        seen = {self.original}
-        for name, text, detail in (
-            [("normalized", self.normalized, ""), ("deobfuscated", self.deobfuscated or "", "")]
-            + [("decoded", s.text, s.kind) for s in self.decoded]
-        ):
+        if self.expanded:  # oryginał i normalized zawierają zakodowane bloby, więc nie oceniamy ich osobno
+            head = [("expanded", self.expanded, ""), ("deobfuscated", self.deobfuscated or "", "")]
+        else:
+            head = [("original", self.original, ""), ("normalized", self.normalized, ""), ("deobfuscated", self.deobfuscated or "", "")]
+        out: list[Variant] = []
+        seen: set[str] = set()
+        for name, text, detail in head + [("decoded", s.text, s.kind) for s in self.decoded if not s.intermediate]:
             if text and text not in seen:
                 seen.add(text)
                 out.append(Variant(name, text, detail))
-        return out
+        return out or [Variant("original", self.original)]  # pusty tekst też musi mieć wariant do oceny
+
+
+def _expand(text: str, segments: list[Segment]) -> str | None:
+    """Podmienia zakodowane fragmenty pierwszego poziomu na ich najgłębszą odkodowaną treść. None, gdy nic nie podmieniono."""
+    children: dict[int, list[int]] = defaultdict(list)
+    for i, seg in enumerate(segments):
+        if seg.parent is not None:
+            children[seg.parent].append(i)
+
+    def leaf(i: int) -> str:
+        kids = children.get(i)
+        return leaf(kids[0]) if kids else segments[i].text
+
+    reps = sorted((seg.span, leaf(i)) for i, seg in enumerate(segments) if seg.depth == 1 and seg.span)
+    out, pos, replaced = [], 0, False
+    for (a, b), repl in reps:
+        if a < pos:  # zachodzące na siebie fragmenty: pierwszy wygrywa
+            continue
+        out += [text[pos:a], repl]
+        pos, replaced = b, True
+    out.append(text[pos:])
+    return "".join(out) if replaced else None
 
 
 def _decode_all(text: str, cfg: NormalizationConfig, sig: Signals) -> list[Segment]:
     segments: list[Segment] = []
     total = 0
-    queue: list[tuple[str, int]] = [(text, 0)]
+    queue: list[tuple[str, int, int | None]] = [(text, 0, None)]
     enabled = [(k, fn) for k, fn in DECODERS.items() if getattr(cfg.decoders, k)]
     while queue:
-        current, depth = queue.pop(0)
+        current, depth, parent = queue.pop(0)
         if depth >= cfg.max_decode_depth:
             if any(fn(current) for _, fn in enabled):
                 sig.decode_limit_hit = True
@@ -93,9 +124,9 @@ def _decode_all(text: str, cfg: NormalizationConfig, sig: Signals) -> list[Segme
                     sig.decode_limit_hit = True
                     return segments
                 total += len(decoded)
-                segments.append(Segment(kind, decoded, depth + 1, span if depth == 0 else None))
+                segments.append(Segment(kind, decoded, depth + 1, span if depth == 0 else None, parent))
                 sig.max_decode_depth = max(sig.max_decode_depth, depth + 1)
-                queue.append((decoded, depth + 1))
+                queue.append((decoded, depth + 1, len(segments) - 1))
     return segments
 
 
@@ -120,7 +151,12 @@ def normalize(text: str, checkpoint: Checkpoint, cfg: NormalizationConfig) -> No
             sig.max_decode_depth = max(sig.max_decode_depth, 1)
         sig.decoded_kinds = sorted({s.kind for s in decoded})
 
-        deob = normalized
+        for seg in decoded:
+            if seg.parent is not None:
+                decoded[seg.parent].intermediate = True
+        expanded = _expand(normalized, decoded)
+        base = expanded or normalized
+        deob = base
         if cfg.deobfuscate.markup:
             deob, sig.hidden_markup, sig.html_comments = expose_markup(deob)
         if cfg.deobfuscate.spaced:
@@ -129,7 +165,7 @@ def normalize(text: str, checkpoint: Checkpoint, cfg: NormalizationConfig) -> No
             deob, sig.leet_tokens = deleet(deob)
         if cfg.deobfuscate.case:
             deob, sig.alt_case_words = decase(deob)
-        return Normalized(text, normalized, deob if deob != normalized else None, decoded, sig)
+        return Normalized(text, normalized, deob if deob != base else None, decoded, sig, expanded)
     except Exception:  # normalizacja nie może wywrócić sidecara
         sig.error = True
         return Normalized(text, text, None, [], sig)

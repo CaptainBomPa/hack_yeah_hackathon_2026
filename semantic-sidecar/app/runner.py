@@ -9,6 +9,7 @@ statusem timeout, a nie zawieszeniem. Twardy deadline po stronie gatewaya jest o
 """
 
 import logging
+import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from concurrent.futures import TimeoutError as FutureTimeout
@@ -46,6 +47,10 @@ class SemanticRunner:
         self.cfg = cfg
         self.sanitizer = sanitizer
         self.pool = ThreadPoolExecutor(max_workers=cfg.deadlines.max_workers, thread_name_prefix="semantic")
+        # Normalizacja ma własną pulę: gdy modele się przeciągają i zajmą `pool`, normalizacja nie może czekać w ich kolejce
+        # (wcześniej kończyło się to fałszywym `normalization_timeout`, czyli błędem całego żądania).
+        self.norm_pool = ThreadPoolExecutor(max_workers=max(2, cfg.deadlines.max_workers), thread_name_prefix="semantic-norm")
+        self.slots = threading.BoundedSemaphore(max(1, cfg.deadlines.max_concurrent_inference))
 
     def classify(self, req: ClassifyRequest) -> ClassifyResponse:
         d = self.cfg.deadlines
@@ -68,13 +73,24 @@ class SemanticRunner:
 
         fallback = Normalized(req.text, req.text, None, [], Signals(error=True))
         futures: dict[Future, Detector] = {}
+        runnable = [d for d in self.detectors if req.checkpoint in d.checkpoints and not (norm_failure and d.requires_normalization)]
         for det in self.detectors:
-            if req.checkpoint not in det.checkpoints:
-                continue
-            if norm_failure and det.requires_normalization:
+            if req.checkpoint in det.checkpoints and norm_failure and det.requires_normalization:
                 results.append(self._failed(det, Status.ERROR, norm_failure[1], 0.0))
-                continue
+        slot = False
+        if runnable:
+            wait_s = min(self.cfg.deadlines.queue_wait_ms / 1000, max(0.0, deadline - time.perf_counter()))
+            waited = time.perf_counter()
+            slot = self.slots.acquire(timeout=wait_s)
+            if not slot:  # zajęte sloty: szybka odmowa zamiast wiszenia i piętrzenia kolejnych wątków
+                log.warning("overloaded", extra={"ctx": {"checkpoint": req.checkpoint.value, "waited_ms": _ms(waited)}})
+                for det in runnable:
+                    results.append(self._failed(det, Status.SKIPPED, "overloaded", _ms(waited)))
+                runnable = []
+        for det in runnable:
             futures[self.pool.submit(_timed, det, req, norm or fallback)] = det
+        if slot:
+            self._release_when_done(list(futures))
 
         budget_left = max(0.0, deadline - time.perf_counter())
         bounded_by_deadline = budget_left < d.detector_timeout_ms / 1000
@@ -105,10 +121,26 @@ class SemanticRunner:
             normalization=self._info(norm, norm_failure),
         )
 
+    def _release_when_done(self, futs: list[Future]) -> None:
+        """Zwalnia slot inferencji dopiero, gdy WSZYSTKIE wątki tego żądania skończą (także po timeoucie żądania)."""
+        if not futs:
+            self.slots.release()
+            return
+        left, lock = [len(futs)], threading.Lock()
+
+        def done(_: Future) -> None:
+            with lock:
+                left[0] -= 1
+                if left[0] == 0:
+                    self.slots.release()
+
+        for f in futs:
+            f.add_done_callback(done)
+
     def _normalize(self, req: ClassifyRequest, deadline: float):
         """Zwraca (wynik lub None, (status, powód) lub None). Normalizacja też podlega deadline'owi."""
         d = self.cfg.deadlines
-        fut = self.pool.submit(normalize, req.text, req.checkpoint, self.cfg.normalization)
+        fut = self.norm_pool.submit(normalize, req.text, req.checkpoint, self.cfg.normalization)
         timeout = min(d.normalization_timeout_ms / 1000, max(0.0, deadline - time.perf_counter()))
         try:
             norm = fut.result(timeout=timeout)

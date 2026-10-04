@@ -41,14 +41,14 @@ class RawEvidence(BaseModel):
     """
 
     text: str
-    variant: Literal["original", "normalized", "deobfuscated", "decoded"] = "original"
+    variant: Literal["original", "normalized", "deobfuscated", "decoded", "expanded"] = "original"
     span: tuple[int, int] | None = None
 
 
 class Evidence(BaseModel):
     """Dowód bezpieczny do logów i odpowiedzi: gdzie i jaki, bez treści."""
 
-    variant: Literal["original", "normalized", "deobfuscated", "decoded"]
+    variant: Literal["original", "normalized", "deobfuscated", "decoded", "expanded"]
     span: tuple[int, int] | None = None
     length: int
     digest: str  # HMAC-SHA256 fragmentu (skrócony): pozwala korelować powtórzenia, nie pozwala odgadywać treści

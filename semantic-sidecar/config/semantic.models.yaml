@@ -5,10 +5,12 @@
 # Modele są wymienne: zmiana `model_dir` i `positive_label` wystarcza, bez zmian w kodzie.
 
 input:
-  # false = sidecar normalizuje sam (warianty: odkodowane, leet, litery rozstrzelone, od tyłu, wielkość liter, homoglify).
-  # Gateway (Java) normalizacji jeszcze nie robi, więc dziś musi robić to sidecar: pomiar na puli testów pokazał leet 29% -> 86%,
-  # tekst od tyłu 24% -> 81%, rozstrzelone litery 5% -> 95%. Gdy Java zacznie normalizować, ustaw true (kontrakt: docs/input-contract.md).
-  pre_normalized: false
+  # true = sidecar NIE normalizuje (gateway wysyła tekst tak, jak jest). Wyłączone 2026-10-04 na prośbę zespołu: klienci agentowi (Codex)
+  # wysyłają długie, gęste konteksty, a normalizacja mnoży liczbę przebiegów modelu (warianty tekstu x 2 modele: ok. 2,3x dłużej).
+  # Koszt (zmierzony na puli testów, recall ataków): leet 86% -> 29%, tekst od tyłu 81% -> 24%, rozstrzelone litery 95% -> 5%,
+  # naprzemienna wielkość liter 95% -> 14%, homoglify 100% -> 62%. Docelowo normalizacja ma być w gatewayu (Java), jednorazowo,
+  # przed wszystkimi guardami. Tryb samodzielny (`false`) nadal działa i jest przetestowany.
+  pre_normalized: true
 
 limits:
   max_input_chars: 20000
@@ -18,6 +20,7 @@ deadlines:
   detector_timeout_ms: 15000
   normalization_timeout_ms: 500
   max_workers: 8
+  queue_wait_ms: 10000          # ile żądanie czeka na wolny slot inferencji (przy zbyt krótkim czasie skoki ruchu kończyły się `overloaded`)
 
 evidence:
   include_preview: false
