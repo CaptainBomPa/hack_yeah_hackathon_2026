@@ -71,6 +71,14 @@ tasks.named('test') {
 	// błąd `DefaultDecoratedConvention` przy tworzeniu zadania `allureReport`). Raport generuje się
 	// przez standalone CLI, zob. backend/README.md "Self-testing suite".
 	systemProperty 'allure.results.directory', "${layout.buildDirectory.get().asFile}/allure-results"
+	// One line per test (JUnit test method or Cucumber scenario) with its result — Gradle is
+	// silent on success by default, which makes both local runs and CI logs useless for scanning
+	// ("did X actually run? did it pass?") without opening the HTML/XML report.
+	testLogging {
+		events "passed", "skipped", "failed"
+		exceptionFormat "short"
+		showStackTraces = false
+	}
 }
 
 // Threat feed (docs/redteam-feed.md): OSV → triage → proponowany feed sygnatur + raport w
@@ -129,5 +137,8 @@ tasks.register('testWithSidecar', Test) {
 	// it visible instead of only landing in the (unread, until the task finishes) test report.
 	testLogging {
 		showStandardStreams = true
+		events "passed", "skipped", "failed"
+		exceptionFormat "short"
+		showStackTraces = false
 	}
 }
