@@ -1,6 +1,7 @@
-import type { ChatBudget, ControlTrace, GuardedChatResponse } from '../api/types'
+import type { ChatBudget, GuardedChatResponse } from '../api/types'
 import { formatMs, sharePct, summarizeLatency, type LatencyRow, type LatencySummary } from '../lib/latency'
 import ActionBadge, { StatusDot } from './ActionBadge'
+import ControlPathView from './ControlPathView'
 import { SpanHighlight } from './HighlightedText'
 import { redactedBy } from '../lib/decision'
 
@@ -103,66 +104,25 @@ export default function DecisionXray({ response, clientLatencyMs, userText, onRe
 
       <TimingPanel timing={timing} />
 
-      <section>
-        <h4 className="mb-1 text-xs uppercase text-slate-500">Control path ({response.trace.length})</h4>
-        <ol className="space-y-2">
-          {response.trace.map((t, i) => (
-            <TraceItem key={`${t.policy}-${i}`} trace={t} />
-          ))}
-        </ol>
-      </section>
+      {/* Ścieżkę kontroli rysuje ControlPathView: grupuje wpisy per etap i kontrolę, bo guardy
+          INPUT lecą raz na każdą wiadomość i płaska lista rosła z historią rozmowy. */}
+      <ControlPathView
+        trace={response.trace}
+        action={response.action}
+        blockedBy={response.blockedBy}
+        upstreamMs={timing.upstreamMs}
+      />
     </div>
   )
 }
 
+/** Nazwa kontroli jako powód decyzji; klikalna, gdy rodzic umie filtrować audyt po `reason`. */
 function Reason({ policy, className, onReason }: { policy: string; className: string; onReason?: (policy: string) => void }) {
   if (!onReason) return <code className={className}>{policy}</code>
   return (
     <button onClick={() => onReason(policy)} title={`Show requests with reason ${policy}`} className="hover:underline">
       <code className={className}>{policy}</code>
     </button>
-  )
-}
-
-function TraceItem({ trace: t }: { trace: ControlTrace }) {
-  const degraded = t.status && t.status !== 'ok'
-  return (
-    <li className={`rounded border p-2 ${degraded ? 'border-amber-700/60 bg-amber-950/20' : 'border-slate-800 bg-slate-800/40'}`}>
-      <div className="flex items-center justify-between gap-2">
-        <code className="truncate">{t.policy}</code>
-        <ActionBadge action={t.action} />
-      </div>
-      <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-400">
-        <span>{t.kind === 'semantic' ? 'semantic' : 'deterministic'}</span>
-        {t.stage && <span>{t.stage}</span>}
-        {t.mode && <span>mode: {t.mode}</span>}
-        <span>{formatMs(t.latencyMs)}</span>
-        {t.provider && <span>provider: {t.provider}</span>}
-        {t.status && <StatusDot status={t.status} />}
-      </div>
-      {t.confidence !== undefined && (
-        <ConfidenceBar confidence={t.confidence} threshold={t.threshold} />
-      )}
-      {t.detail && <p className="mt-1 text-xs text-slate-300">{t.detail}</p>}
-    </li>
-  )
-}
-
-function ConfidenceBar({ confidence, threshold }: { confidence: number; threshold?: number }) {
-  const pct = Math.round(confidence * 100)
-  const over = threshold !== undefined && confidence >= threshold
-  return (
-    <div className="mt-1.5">
-      <div className="relative h-1.5 rounded bg-slate-700">
-        <div className={`h-1.5 rounded ${over ? 'bg-red-400' : 'bg-emerald-400'}`} style={{ width: `${pct}%` }} />
-        {threshold !== undefined && (
-          <div className="absolute -top-0.5 h-2.5 w-0.5 bg-slate-200" style={{ left: `${threshold * 100}%` }} />
-        )}
-      </div>
-      <p className="mt-0.5 text-xs text-slate-400">
-        confidence {pct}%{threshold !== undefined && ` · threshold ${Math.round(threshold * 100)}%`}
-      </p>
-    </div>
   )
 }
 

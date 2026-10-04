@@ -32,8 +32,15 @@ public class GuardChain {
 
     private record Entry(Guard guard, GuardSettings settings, int order) {}
 
+    /**
+     * Guard, którego aktywna polityka nie uruchamia. Nie wykonujemy go, ale musi zostać widoczny
+     * w `trace` (VISION.md §4: tryb wyłączony „pozostaje widoczny”), inaczej brak kontroli wygląda
+     * w UI identycznie jak brak kontrolki — a jurorzy wyłączają kontrole celowo (CRITERIA §6).
+     */
+    private record Off(String id, String kind, String detail) {}
+
     /** Łańcuch zbudowany dla jednej wersji polityki. */
-    private record Built(long version, String hash, Map<Stage, List<Entry>> byStage) {}
+    private record Built(long version, String hash, Map<Stage, List<Entry>> byStage, Map<Stage, List<Off>> offByStage) {}
 
     private final List<Guard> guards;
     private final PolicySource policySource;
@@ -93,11 +100,12 @@ public class GuardChain {
 
     /** Uruchamia łańcuch według podanej wersji polityki (snapshot wzięty na początku żądania). */
     public GuardChainResult run(ActivePolicy policy, Stage stage, GuardContext context) {
+        Built chain = chainFor(policy);
         var trace = new ArrayList<ControlTrace>();
         var current = context;
         var action = Action.ALLOW;
 
-        for (Entry entry : chainFor(policy).get(stage)) {
+        for (Entry entry : chain.byStage().get(stage)) {
             String id = entry.guard().id();
             long startedAt = System.nanoTime();
             Verdict verdict;
@@ -107,43 +115,53 @@ public class GuardChain {
                 log.error("requestId={} guard={} action=block reason=guard-error", context.requestId(), id, error);
                 verdict = new Verdict.Block(GUARD_ERROR);
             }
-            long latencyMs = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+            double latencyMs = ControlTrace.elapsedMs(startedAt);
 
             switch (verdict) {
-                case Verdict.Allow allow ->
-                        trace.add(trace(entry.guard().kind(), id, stage, Action.ALLOW, latencyMs, allow.detail()));
+                case Verdict.Allow allow -> trace.add(
+                        trace(entry.guard().kind(), id, stage, Action.ALLOW, latencyMs, allow.detail(), allow.signal()));
                 case Verdict.Redact redact -> {
                     current = current.withText(redact.newText());
                     action = Action.REDACT;
-                    trace.add(trace(entry.guard().kind(), id, stage, Action.REDACT, latencyMs, redact.detail()));
+                    trace.add(trace(entry.guard().kind(), id, stage, Action.REDACT, latencyMs, redact.detail(),
+                            redact.signal()));
                 }
                 case Verdict.Block block -> {
-                    trace.add(trace(entry.guard().kind(), id, stage, Action.BLOCK, latencyMs, block.reason()));
+                    trace.add(trace(entry.guard().kind(), id, stage, Action.BLOCK, latencyMs, block.reason(),
+                            block.signal()));
+                    // Przerwany łańcuch: nie dokładamy wpisów `off`, bo guardy za blokadą też się nie
+                    // wykonały i trace ma uczciwie kończyć się na tym, co faktycznie zaszło.
                     return new GuardChainResult(Action.BLOCK, current.text(), id, trace);
                 }
             }
         }
+        chain.offByStage().get(stage).forEach(off -> trace.add(off(off, stage)));
         return new GuardChainResult(action, current.text(), null, trace);
     }
 
-    private Map<Stage, List<Entry>> chainFor(ActivePolicy policy) {
+    private Built chainFor(ActivePolicy policy) {
         Built cached = built;
         if (cached != null && cached.version() == policy.version() && cached.hash().equals(policy.hash())) {
-            return cached.byStage();
+            return cached;
         }
         Built fresh = build(policy);
         built = fresh;
-        return fresh.byStage();
+        return fresh;
     }
 
     private Built build(ActivePolicy policy) {
         Map<Stage, List<Entry>> byStage = new EnumMap<>(Stage.class);
+        Map<Stage, List<Off>> offByStage = new EnumMap<>(Stage.class);
         for (Stage stage : Stage.values()) {
             byStage.put(stage, new ArrayList<>());
+            offByStage.put(stage, new ArrayList<>());
         }
         for (Guard guard : guards) {
             var rule = policy.document().guards().get(guard.id());
             if (rule == null || !rule.enabled()) {
+                var off = new Off(guard.id(), guard.kind(),
+                        rule == null ? "not configured in policy" : "disabled in policy");
+                guard.stages().forEach(stage -> offByStage.get(stage).add(off));
                 continue;
             }
             var entry = new Entry(guard, new GuardSettings(true, rule.params()), rule.order());
@@ -151,13 +169,23 @@ public class GuardChain {
         }
         byStage.values().forEach(entries -> entries.sort(
                 Comparator.comparingInt(Entry::order).thenComparing(entry -> entry.guard().id())));
-        byStage.forEach((stage, entries) -> log.info("guards policyVersion={} stage={} active={}",
-                policy.version(), stage, entries.stream().map(e -> e.guard().id()).toList()));
-        return new Built(policy.version(), policy.hash(), byStage);
+        // Wyłączone idą na koniec etapu i alfabetycznie: polityka nie zna dla nich sensownej kolejności.
+        offByStage.values().forEach(entries -> entries.sort(Comparator.comparing(Off::id)));
+        byStage.forEach((stage, entries) -> log.info("guards policyVersion={} stage={} active={} off={}",
+                policy.version(), stage, entries.stream().map(e -> e.guard().id()).toList(),
+                offByStage.get(stage).stream().map(Off::id).toList()));
+        return new Built(policy.version(), policy.hash(), byStage, offByStage);
     }
 
-    private static ControlTrace trace(
-            String kind, String id, Stage stage, Action action, long latencyMs, String detail) {
-        return new ControlTrace(id, kind, action.wire(), latencyMs, detail, stage.wire());
+    private static ControlTrace trace(String kind, String id, Stage stage, Action action, double latencyMs,
+            String detail, Verdict.Signal signal) {
+        return new ControlTrace(id, kind, action.wire(), latencyMs, detail, stage.wire(),
+                signal == null ? null : signal.confidence(),
+                signal == null ? null : signal.threshold());
+    }
+
+    private static ControlTrace off(Off off, Stage stage) {
+        return new ControlTrace(off.id(), off.kind(), ControlTrace.ACTION_OFF, 0, off.detail(), stage.wire(),
+                null, null);
     }
 }

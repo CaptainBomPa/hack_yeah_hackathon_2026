@@ -5,6 +5,13 @@
 /** Akcja decyzji (VISION.md §4). Backend dziś zwraca tylko allow/block. */
 export type GuardAction = 'allow' | 'monitor' | 'redact' | 'require_approval' | 'block'
 
+/**
+ * Akcja jednej kontroli w `trace`. Poza akcjami decyzji dochodzi `off` — kontrola wyłączona
+ * w aktywnej polityce (GuardChain.java). Osobny typ, bo `off` nie jest poprawną akcją całego
+ * żądania i nie powinno trafić do `GuardedChatResponse.action`.
+ */
+export type ControlAction = GuardAction | 'off'
+
 /** Status techniczny kontroli/zależności (VISION.md §4). */
 export type TechStatus = 'ok' | 'degraded' | 'error'
 
@@ -18,16 +25,25 @@ export interface TextSpan {
 export interface ControlTrace {
   policy: string // np. "model.allowlist", "semantic.injection"
   kind: 'deterministic' | 'semantic'
-  action: GuardAction
-  /** Czas własny tej jednej kontroli, nie znacznik czasu w pipeline — sumowanie ma sens. */
+  action: ControlAction
+  /**
+   * Czas własny tej jednej kontroli, nie znacznik czasu w pipeline — sumowanie ma sens.
+   * Ułamkowy, z rozdzielczością mikrosekundy (kontrole deterministyczne trwają ułamki ms).
+   * Do wyświetlania używaj `formatMs` z `lib/latency.ts`, które samo dobiera µs/ms/s.
+   */
   latencyMs: number
   detail: string | null
   /** Etap guardu; brak dla kontroli bramkujących żądanie (allowlista modelu, budżet, audyt). */
   stage?: 'input' | 'output' | 'tool_call'
+  /**
+   * Wynik detektora 0-1 i próg blokady z polityki, w tej samej skali. Tylko kontrole semantyczne;
+   * `null` dla deterministycznych i dla awarii providera. Backend wysyła te pola jako `null`,
+   * nie pomija ich, więc sprawdzaj `!= null`, nie `!== undefined`.
+   */
+  confidence?: number | null
+  threshold?: number | null
   // rozszerzenia (kontrakt §5.1)
   mode?: 'off' | 'monitor' | 'redact' | 'require_approval' | 'block'
-  confidence?: number
-  threshold?: number
   status?: TechStatus
   provider?: string
   spans?: TextSpan[]

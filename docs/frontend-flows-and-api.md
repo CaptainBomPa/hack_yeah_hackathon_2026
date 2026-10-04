@@ -171,27 +171,39 @@ Response, **stan obecny** (`GuardedChatResponse.java`):
 }
 ```
 `ControlTrace.latencyMs` to **czas własny** jednej kontroli (nie znacznik czasu w pipeline), więc
-suma po `trace` jest realnym kosztem kontroli. `stage` jest ustawiony tylko dla guardów z łańcucha;
+suma po `trace` jest realnym kosztem kontroli. Jest **ułamkowy, z rozdzielczością mikrosekundy**:
+guardy deterministyczne trwają ułamki milisekundy, więc przy liczbie całkowitej cała warstwa PII
+i sekretów raportowała `0`. `formatMs` w `lib/latency.ts` dobiera jednostkę (µs / ms / s), więc
+nie formatuj tego pola ręcznie. Wpis `off` ma dokładnie `0`. `stage` jest ustawiony tylko dla guardów z łańcucha;
 kontrole bramkujące żądanie (`model.allowlist`, `policy.model-access`, `budget.*`, `audit.write`)
 mają `null`. `latency.upstreamMs` jest `null`, gdy żądanie nie dotarło do modelu. Panel „Timing”
 w X-ray (`frontend/src/lib/latency.ts`) liczy z tych trzech pól rozkład czasu żądania.
 
+`confidence` i `threshold` to wynik detektora i próg blokady z polityki, w tej samej skali 0-1.
+Wypełnione tylko dla kontroli z wynikiem liczbowym (dziś semantyka); deterministyczne i awaria
+providera mają `null`. **Backend wysyła te pola jako `null`, nie pomija ich** — w UI sprawdzaj
+`!= null`, nie `!== undefined`.
+
+`ControlTrace.action` to `allow | redact | block` **oraz `off`** dla kontroli wyłączonej albo
+nieskonfigurowanej w aktywnej polityce (`GuardChain.java`). Wpis `off` ma `latencyMs: 0`, nie jest
+trafieniem i nie wchodzi do statystyk kontroli, ale jest w `trace`, żeby wyłączenie kontroli było
+widoczne (VISION §4) i nie wyglądało jak brak kontrolki. `off` nie jest poprawną akcją całego
+żądania — w typach frontendu akcja kontroli to osobny typ `ControlAction`, nie `GuardAction`.
+
 Statusy HTTP dziś: `200` allow, `400` walidacja (`blockedBy: "request.validation"`),
 `403` model spoza allowlisty (`model.allowlist`), `502` awaria/timeout modelu (`upstream-error`).
 
-**Rozszerzenia proponowane pod X-ray** (wszystkie opcjonalne, addytywne; `latency` i `stage` już
-są w backendzie — patrz wyżej):
+**Rozszerzenia proponowane pod X-ray** (wszystkie opcjonalne, addytywne; `latency`, `stage`,
+`confidence` i `threshold` już są w backendzie — patrz wyżej):
 
 ```jsonc
 {
-  "policyVersion": "v13", "policyHash": "a1b2c3d",
   "status": "ok",                       // TechStatus: czy któraś zależność była degraded/error
   "trace": [{
     "policy": "semantic.injection", "kind": "semantic", "action": "block", "latencyMs": 41, "detail": "…",
-    "mode": "block",                    // ControlMode z polityki
-    "confidence": 0.93,                 // ControlResult.confidence (VISION §4)
-    "threshold": 0.8,
-    "status": "ok",                     // TechStatus tej kontroli
+    "mode": "block",                    // ControlMode z polityki (polityka nie ma dziś pojęcia trybu)
+    "messageIndex": 2,                  // której wiadomości dotyczy wpis etapu input (dziś UI zgaduje z kolejności)
+    "status": "ok",                      // TechStatus tej kontroli
     "provider": "laya-local",           // dla kontroli semantycznych
     "spans": [{ "start": 12, "end": 31, "label": "PII:PESEL" }]   // fragmenty w tekście użytkownika do podświetlenia
   }],

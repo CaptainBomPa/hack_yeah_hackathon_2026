@@ -119,7 +119,7 @@ public class BudgetGate {
         }
 
         /** Wpis do `trace`: ALLOW (z ewentualnym ostrzeżeniem soft-cap) albo BLOCK z powodem. */
-        public ControlTrace toTrace(long latencyMs) {
+        public ControlTrace toTrace(double latencyMs) {
             if (!allowed) {
                 return new ControlTrace(blockedBy, "deterministic", "block", latencyMs, detail);
             }

@@ -310,14 +310,16 @@ components:
           type: string
           enum: [deterministic, semantic]
         action:
-          $ref: '#/components/schemas/Action'
+          $ref: '#/components/schemas/ControlAction'
         latencyMs:
-          type: integer
-          format: int64
+          type: number
+          format: double
           description: |
             Czas własny tej jednej kontroli, nie znacznik czasu w pipeline — suma po wpisach
-            `trace` to realny koszt kontroli w żądaniu.
-          example: 3
+            `trace` to realny koszt kontroli w żądaniu. Ułamkowy, z rozdzielczością mikrosekundy:
+            kontrole deterministyczne trwają ułamki milisekundy i przy liczbie całkowitej cała ta
+            warstwa raportowała `0`. Wpis `off` ma dokładnie `0`.
+          example: 0.183
         detail:
           type: string
           nullable: true
@@ -330,6 +332,35 @@ components:
             Etap łańcucha guardów. Null dla kontroli bramkujących całe żądanie
             (`model.allowlist`, `policy.model-access`, `budget.*`, `audit.write`).
           example: input
+        confidence:
+          type: number
+          format: double
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: |
+            Wynik detektora (0-1) dla kontroli, która zwraca liczbę — dziś semantyka. Null dla
+            kontroli deterministycznych i dla awarii providera (nie ma wyniku do pokazania).
+            Liczba, a nie tekst w `detail`, żeby UI mogło narysować pasek ze znacznikiem progu.
+          example: 0.884
+        threshold:
+          type: number
+          format: double
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: |
+            Próg blokady z aktywnej polityki, w tej samej skali co `confidence`. Razem pokazują,
+            jak blisko decyzji był ten wynik — i co zmienia ruszenie progu w polityce.
+          example: 0.9
+    ControlAction:
+      type: string
+      description: |
+        Akcja jednej kontroli. Poza akcjami decyzji dochodzi `off`: kontrola wyłączona (albo
+        nieskonfigurowana) w aktywnej polityce. Taki wpis ma `latencyMs: 0`, nie jest trafieniem
+        i nie wchodzi do statystyk kontroli — jest w `trace` po to, żeby wyłączenie kontroli było
+        widoczne (VISION.md §4), a nie wyglądało jak brak kontrolki.
+      enum: [allow, redact, block, off]
     ChatLatency:
       type: object
       description: Czasy żądania zmierzone w gatewayu (ChatLatency.java).

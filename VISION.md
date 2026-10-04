@@ -205,6 +205,17 @@ nie dostaje jej surowej treści: redakcja jest stosowana, a treść, którą gua
 (klucz: hash polityki + etap + SHA-256 treści, LRU, TTL 30 min), bez wyników niepewnych
 (błąd guarda, fail-closed/fail-open). Cache to tylko optymalizacja: serwer zawsze sam liczy hash treści.
 
+Kontrakt `ControlTrace` niesie poza akcją i latencją trzy pola pod Explainable Verdict. `stage`
+(`input`/`output`/`tool_call`, `null` dla bramek żądania) oraz `confidence` i `threshold` — wynik
+detektora i próg blokady z polityki, w tej samej skali 0-1. Sygnał semantyczny jest **liczbą w
+kontrakcie**, nie tekstem w `detail`: inaczej zmiana progu w polityce nie daje się pokazać w UI,
+a CRITERIA §6 zakłada, że jurorzy progi ruszają. Kontrole bez wyniku liczbowego (deterministyczne,
+awaria providera) mają tu `null`. Dodatkowo `ControlTrace.action` ma wartość `off` dla kontroli
+wyłączonej albo nieskonfigurowanej w aktywnej polityce: taki wpis ma zerową latencję, nie jest
+trafieniem i nie wchodzi do statystyk kontroli, ale **musi być w `trace`** — tryb wyłączony
+pozostaje widoczny (§4), żeby brak kontroli dał się odróżnić od braku kontrolki. Konsumenci
+liczący trafienia pomijają `off` tak samo jak `allow` (`ControlTrace.isHit`).
+
 Kontrole deterministyczne to beany `Guard` (`backend/.../guard`) spięte w łańcuch `GuardChain`,
 wołany z kontrolera przed (`INPUT`) i po (`OUTPUT`) wywołaniu modelu. Włączane i parametryzowane
 w `control-layer.guards` (`application.yml`); guard bez wpisu jest wyłączony. Instrukcja:
@@ -288,6 +299,13 @@ i integracyjne backendu uzupełniają suite, ale jej nie zastępują.
 - dashboard: **działa e2e** — `GET /api/dashboard?window=1h|24h|7d` liczy metryki z `audit_event` (akcje, 5xx,
   latencja p50/p95, tokeny, oś czasu, top kontroli, per model/użytkownik) + budżety ról z `budget_counter`;
 - `frontend/` — Playground (czat + X-ray), Audit log i Dashboard podłączone do backendu; Polityki i Session graph jeszcze nie;
+- X-ray: **działa** — panel „Timing” (`lib/latency.ts`) rozbija czas żądania na kontrole
+  deterministyczne, semantyczne i model, a „Control path” (`lib/controlPath.ts`,
+  `ControlPathView.tsx`) składa płaski `trace` w sekcje pipeline'u i grupy per kontrola. Guardy
+  `INPUT` lecą raz na każdą wiadomość, więc lista rośnie z historią rozmowy: trafienia są widoczne
+  od razu, `allow` i `off` siedzą pod rozwinięciem, a granica wywołania modelu jest separatorem.
+  Numer wiadomości przy wpisie jest **wyliczany** z kolejności wystąpień guarda (n-te wystąpienie =
+  n-ta wiadomość); docelowo ma go dawać backend jako `messageIndex`;
 - `semantic-sidecar/` — **działa**: lokalny sidecar Python/FastAPI (port 8001) z klasyfikatorem prompt injection
   `Horizon-Labs/prompt-injection-guard-small` (Apache-2.0, 141M, kalibrowany), wołany przez guard `SEM-001`
   (próg blokady 0,9 w `application.yml`, fail-closed). Pokrywa P1, P2, P5; P3 i P4 raportuje jako brak pokrycia

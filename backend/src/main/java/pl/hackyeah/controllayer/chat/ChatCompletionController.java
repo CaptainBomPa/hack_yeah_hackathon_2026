@@ -186,7 +186,8 @@ public class ChatCompletionController {
                         return Mono.just(stamped);
                     }
                     var trace = new ArrayList<>(body.trace());
-                    trace.add(new ControlTrace(AUDIT_POLICY, "deterministic", "block", elapsedMillis(auditStartedAt),
+                    trace.add(new ControlTrace(AUDIT_POLICY, "deterministic", "block",
+                            ControlTrace.elapsedMs(auditStartedAt),
                             "audit log unavailable (fail-closed)"));
                     return Mono.just(ResponseEntity.status(503)
                             .body(GuardedChatResponse.block(requestId, AUDIT_POLICY, trace)
@@ -202,7 +203,7 @@ public class ChatCompletionController {
         // więc poniżej każdy krok ma swój znacznik startu, a nie wspólny start żądania.
         long allowlistStartedAt = System.nanoTime();
         var allowedModel = modelCatalog.resolveAllowed(policy, request.model());
-        long allowlistMs = elapsedMillis(allowlistStartedAt);
+        double allowlistMs = ControlTrace.elapsedMs(allowlistStartedAt);
         if (allowedModel.isEmpty()) {
             log.info("requestId={} model={} action=block reason=not-allowed", requestId, request.model());
             var trace = List.of(new ControlTrace(
@@ -224,7 +225,7 @@ public class ChatCompletionController {
                     MODEL_ACCESS_POLICY,
                     "deterministic",
                     "block",
-                    elapsedMillis(accessStartedAt),
+                    ControlTrace.elapsedMs(accessStartedAt),
                     "role " + caller.role() + " may not use model " + request.model()));
             return Mono.just(ResponseEntity.status(403)
                     .body(GuardedChatResponse.block(requestId, MODEL_ACCESS_POLICY, policyTrace)));

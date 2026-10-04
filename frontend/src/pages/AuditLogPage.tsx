@@ -33,9 +33,24 @@ function describeError(err: unknown): string {
   return String(err)
 }
 
-/** Rekord audytu w kształcie odpowiedzi czatu, żeby użyć tego samego X-ray co w Playground. */
+/**
+ * Rekord audytu w kształcie odpowiedzi czatu, żeby użyć tego samego X-ray co w Playground.
+ * `latencyMs` z audytu to czas zmierzony w gatewayu, więc podajemy go jako `latency.totalMs`,
+ * a nie jako pomiar z przeglądarki. Rozbicia na czas modelu audyt nie przechowuje (brak
+ * `upstreamMs`), więc X-ray pokaże tę część jako „model + network”. Treści promptów i odpowiedzi
+ * w audycie nie ma (VISION.md §6), dlatego `message` zostaje null.
+ */
 function asDecision(e: AuditEvent): GuardedChatResponse {
-  return { requestId: e.requestId, action: e.action, message: null, blockedBy: e.blockedBy, trace: e.trace, usage: e.usage, policyVersion: e.policyVersion }
+  return {
+    requestId: e.requestId,
+    action: e.action,
+    message: null,
+    blockedBy: e.blockedBy,
+    trace: e.trace,
+    usage: e.usage,
+    policyVersion: e.policyVersion,
+    latency: { totalMs: e.latencyMs },
+  }
 }
 
 export default function AuditLogPage() {
@@ -334,9 +349,10 @@ export default function AuditLogPage() {
                   <span className="break-all font-mono text-slate-500">{selected.recordHash}</span>
                 </Field>
               </dl>
+              {/* Bez clientLatencyMs: asDecision podaje czas z rekordu jako latency.totalMs,
+                  a ten prop oznacza pomiar z przeglądarki, którego w audycie nie ma. */}
               <DecisionXray
                 response={asDecision(selected)}
-                clientLatencyMs={selected.latencyMs}
                 onReason={(policy) => filterBy('reason', policy)}
               />
             </div>

@@ -92,9 +92,19 @@ export function summarizeLatency(
   }
 }
 
-/** ms dla krótkich czasów, sekundy dla długich — ten sam zapis w X-ray i na liście tur. */
+/**
+ * Jednostka dobrana do wielkości: µs dla kontroli deterministycznych, ms dla semantycznych,
+ * sekundy dla modelu. `ControlTrace.latencyMs` ma rozdzielczość mikrosekundy, więc guard trwający
+ * 0,18 ms pokazuje się jako „180 µs”, a nie „0 ms” — inaczej cała warstwa deterministyczna
+ * wyglądałaby na niezmierzoną.
+ *
+ * Dokładne zero zostaje jako „0 ms”: tyle ma wpis `off`, czyli kontrola, która się nie wykonała.
+ */
 export function formatMs(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)} ms`
+  if (ms <= 0) return '0 ms'
+  const us = Math.round(ms * 1000)
+  if (us < 1000) return `${us} µs`
+  if (ms < 1000) return `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`
   return `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)} s`
 }
 
